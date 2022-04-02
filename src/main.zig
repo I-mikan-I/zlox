@@ -9,7 +9,11 @@ test "chunks" {
     const debug = @import("./debug.zig");
     const a = std.testing.allocator;
     var c = chunk.Chunk.init(a);
-    c.writeChunk(@enumToInt(chunk.OpCode.op_return));
+    var constant = c.addConstant(1.2);
+    c.writeChunk(@enumToInt(chunk.OpCode.op_constant), 123);
+    c.writeChunk(constant, 123);
+
+    c.writeChunk(@enumToInt(chunk.OpCode.op_return), 123);
     debug.disassembleChunk(&c, "test chunk"[0..]);
     c.freeChunk();
 }

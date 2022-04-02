@@ -12,7 +12,12 @@ pub fn disassembleChunk(c: *chunk.Chunk, name: []const u8) void {
 }
 
 pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
-    stdout.print("{d:04} ", .{offset}) catch unreachable;
+    stdout.print("{d:0>4} ", .{offset}) catch unreachable;
+    if (offset > 0 and c.lines[offset] == c.lines[offset - 1]) {
+        stdout.print("   | ", .{}) catch unreachable;
+    } else {
+        stdout.print("{d:4} ", .{c.lines[offset]}) catch unreachable;
+    }
     const instruction = c.code[offset];
     return switch (instruction) {
         @enumToInt(chunk.OpCode.op_return) => simpleInstruction("OP_RETURN", offset),

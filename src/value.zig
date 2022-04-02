@@ -22,9 +22,9 @@ pub const ValueArray = struct {
         if (self.capacity <= self.count) {
             const old_c = self.capacity;
             self.capacity = if (old_c < 8) 8 else old_c * 2;
-            self.code = memory.growArray(Value, self.code, old_c, self.capacity, self.allocator);
+            self.values = memory.growArray(Value, self.values, old_c, self.capacity, self.allocator);
         }
-        self.code[self.count] = value;
+        self.values[self.count] = value;
         self.count += 1;
     }
 
