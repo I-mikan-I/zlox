@@ -5,6 +5,11 @@ pub fn main() anyerror!void {
     std.log.info("{x}", .{@enumToInt(chunk.OpCode.op_return)});
 }
 
-test "basic test" {
-    try std.testing.expectEqual(10, 3 + 7);
+test "chunks" {
+    const debug = @import("./debug.zig");
+    const a = std.testing.allocator;
+    var c = chunk.Chunk.init(a);
+    c.writeChunk(@enumToInt(chunk.OpCode.op_return));
+    debug.disassembleChunk(&c, "test chunk"[0..]);
+    c.freeChunk();
 }

@@ -21,9 +21,16 @@ pub const Chunk = struct {
         if (self.capacity <= self.count) {
             const old_c = self.capacity;
             self.capacity = if (old_c < 8) 8 else old_c * 2;
-            self.code = memory.growArray(u8, self.code, old_c, self.capacity);
+            self.code = memory.growArray(u8, self.code, old_c, self.capacity, self.allocator);
         }
         self.code[self.count] = byte;
         self.count += 1;
+    }
+
+    pub fn freeChunk(self: *Chunk) void {
+        memory.freeArray(u8, self.code, self.capacity, self.allocator);
+        self.count = 0;
+        self.capacity = 0;
+        self.code = undefined;
     }
 };
