@@ -1,7 +1,10 @@
 const std = @import("std");
 const memory = @import("./memory.zig");
+const ValueArray = @import("./value.zig").ValueArray;
+const Value = @import("./value.zig").Value;
 
-pub const OpCode = enum {
+pub const OpCode = enum(u8) {
+    op_constant, // arg 1: constant index
     op_return,
 };
 
@@ -10,10 +13,12 @@ pub const Chunk = struct {
     count: u32 = 0,
     capacity: u32 = 0,
     code: [*]u8 = undefined,
+    constants: ValueArray,
 
     pub fn init(allocator: std.mem.Allocator) Chunk {
         return .{
             .allocator = allocator,
+            .constants = ValueArray.init(allocator),
         };
     }
 
@@ -27,10 +32,16 @@ pub const Chunk = struct {
         self.count += 1;
     }
 
+    pub fn addConstant(self: *Chunk, value: Value) u32 {
+        self.constants.writeValueArray(value);
+        return self.constants.count - 1;
+    }
+
     pub fn freeChunk(self: *Chunk) void {
         memory.freeArray(u8, self.code, self.capacity, self.allocator);
         self.count = 0;
         self.capacity = 0;
         self.code = undefined;
+        self.constants.freeValueArray();
     }
 };
