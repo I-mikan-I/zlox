@@ -19,13 +19,18 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         stdout.print("{d:4} ", .{c.lines[offset]}) catch unreachable;
     }
     const instruction = c.code[offset];
-    return switch (instruction) {
-        @enumToInt(chunk.OpCode.op_return) => simpleInstruction("OP_RETURN", offset),
-        @enumToInt(chunk.OpCode.op_constant) => constantInstruction("OP_CONSTANT", c, offset),
-        else => blk: {
-            stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
-            break :blk offset + 1;
-        },
+    return switch (@intToEnum(chunk.OpCode, instruction)) {
+        .op_return => simpleInstruction("OP_RETURN", offset),
+        .op_constant => constantInstruction("OP_CONSTANT", c, offset),
+        .op_negate => simpleInstruction("OP_NEGATE", offset),
+        .op_add => simpleInstruction("OP_ADD", offset),
+        .op_subtract => simpleInstruction("OP_SUBTRACT", offset),
+        .op_multiply => simpleInstruction("OP_MULTIPLY", offset),
+        .op_divide => simpleInstruction("OP_DIVIDE", offset),
+        // else => blk: {
+        //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
+        //     break :blk offset + 1;
+        // },
     };
 }
 

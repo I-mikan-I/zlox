@@ -11,9 +11,12 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
+    var options = b.addOptions();
+    options.addOption(bool, "trace_enable", b.option(bool, "enable-tracing", "enables Lox VM tracing.") orelse false);
     const exe = b.addExecutable("zlox", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    exe.addOptions("build_options", options);
     exe.install();
 
     const run_cmd = exe.run();
@@ -24,10 +27,10 @@ pub fn build(b: *std.build.Builder) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
-
-    const exe_tests = b.addTest("src/main.zig");
+    const exe_tests = b.addTest("src/tests.zig");
     exe_tests.setTarget(target);
     exe_tests.setBuildMode(mode);
+    exe_tests.addOptions("build_options", options);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
