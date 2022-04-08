@@ -1,12 +1,13 @@
 const std = @import("std");
 const chunk = @import("./chunk.zig");
 const debug = @import("./debug.zig");
+const compiler = @import("./compiler.zig");
 const value = @import("./value.zig");
 const common = @import("./common.zig");
 const stdout = std.io.getStdOut().writer();
 const Chunk = chunk.Chunk;
 
-const VM = struct {
+pub const VM = struct {
     const Value = value.Value;
     const stack_max = 256;
     var stack: [stack_max]Value = undefined;
@@ -23,6 +24,11 @@ const VM = struct {
 
     fn freeVM() void {}
 
+    pub fn interpret(source: []const u8) InterpretResult {
+        compiler.compile(source);
+        return .interpret_ok;
+    }
+
     fn run(self: *VM) InterpretResult {
         while (true) {
             if (common.trace_enabled) {
@@ -38,7 +44,7 @@ const VM = struct {
                 stdout.print("\n", .{}) catch unreachable;
                 _ = debug.disassembleInstruction(self.chunk, @intCast(u32, @ptrToInt(self.ip) - @ptrToInt(self.chunk.code)));
             }
-            var inst = @intToEnum(chunk.OpCode, self.readByte());
+            const inst = @intToEnum(chunk.OpCode, self.readByte());
             switch (inst) {
                 .op_return => {
                     value.printValue(self.pop(), stdout);
@@ -96,14 +102,8 @@ const VM = struct {
     }
 };
 
-const InterpretResult = enum {
+pub const InterpretResult = enum {
     interpret_ok,
     interpret_compile_error,
     interpret_runtime_error,
 };
-
-pub fn interpret(c: *Chunk) InterpretResult {
-    var vm = VM.initVM(c);
-    vm.ip = c.code;
-    return vm.run();
-}
