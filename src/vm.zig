@@ -24,7 +24,7 @@ pub const VM = struct {
 
     fn freeVM() void {}
 
-    pub fn interpret(source: []const u8) InterpretResult {
+    pub fn interpret(source: [:0]const u8) InterpretResult {
         compiler.compile(source);
         return .interpret_ok;
     }

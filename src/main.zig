@@ -32,7 +32,9 @@ fn repl() void {
         stdout.print("> ", .{}) catch unreachable;
 
         if (stdin.readUntilDelimiterOrEof(&line, '\n') catch null) |slice| {
-            _ = vm.VM.interpret(slice);
+            var source = line[0 .. slice.len + 1];
+            source[slice.len] = 0;
+            _ = vm.VM.interpret(source[0..slice.len :0]);
         } else {
             stdout.print("\n", .{}) catch unreachable;
             break;
@@ -51,18 +53,24 @@ fn runFile(path: []const u8) void {
     }
 }
 
-fn readFile(path: []const u8) []const u8 {
+fn readFile(path: []const u8) [:0]const u8 {
     var file = std.fs.openFileAbsolute(path, .{}) catch {
         std.log.err("Could not open file {s}.\n", .{path});
         std.os.exit(74);
     };
     defer file.close();
 
-    const buffer = file.readToEndAlloc(alloc, 10 << 20) catch {
+    var buffer = alloc.alloc(u8, (file.stat() catch std.os.exit(74)).size + 1) catch {
+        std.log.err("Could not allocate memory.\n", .{});
+        std.os.exit(74);
+    };
+
+    const length = file.readAll(buffer) catch {
         std.log.err("Could not read file {s}.\n", .{path});
         std.os.exit(74);
     };
-    return buffer;
+    buffer[length] = 0;
+    return buffer[0..length :0];
 }
 
 test "chunks" {

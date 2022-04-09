@@ -62,7 +62,7 @@ pub const Scanner = struct {
 
     const Self = @This();
 
-    pub fn init(source: []const u8) Self {
+    pub fn init(source: [:0]const u8) Self {
         return .{
             .start = source.ptr,
             .current = source.ptr,
@@ -75,6 +75,12 @@ pub const Scanner = struct {
         if (self.isAtEnd()) return self.makeToken(.lox_eof);
 
         const c = self.advance();
+        if (isAlpha(c)) {
+            return self.identifier();
+        }
+        if (std.ascii.isDigit(c)) {
+            return self.number();
+        }
 
         switch (c) {
             '(' => return self.makeToken(.left_paren),
@@ -94,8 +100,93 @@ pub const Scanner = struct {
             '<' => return self.makeToken(if (self.match('=')) .less_equal else .less),
             '>' => return self.makeToken(if (self.match('=')) .greater_equal else .greater),
 
+            '"' => return self.string(),
+
             else => return self.errorToken("Unexpected character."),
         }
+    }
+
+    fn identifier(self: *Self) Token {
+        while (isAlpha(self.peek()) or std.ascii.isDigit(self.peek())) _ = self.advance();
+        return self.makeToken(self.identifierType());
+    }
+
+    fn number(self: *Self) Token {
+        while (std.ascii.isDigit(self.peek())) {
+            _ = self.advance();
+        }
+
+        if (self.peek() == '.' and std.ascii.isDigit(self.peekNext())) {
+            _ = self.advance();
+            while (std.ascii.isDigit(self.peek())) {
+                _ = self.advance();
+            }
+        }
+
+        return self.makeToken(.number);
+    }
+
+    fn string(self: *Self) Token {
+        while (self.peek() != '"' and !self.isAtEnd()) {
+            if (self.peek() == '\n') self.line += 1;
+            _ = self.advance();
+        }
+        if (self.isAtEnd()) {
+            return self.errorToken("Unterminated string.");
+        }
+
+        // closing quote
+        _ = self.advance();
+        return self.makeToken(.string);
+    }
+
+    inline fn isAlpha(char: u8) bool {
+        return std.ascii.isAlpha(char) or char == '_';
+    }
+
+    fn identifierType(self: *Self) TokenType {
+        return switch (self.start[0]) {
+            'a' => self.checkKeyword(1, 2, "nd", .lox_and),
+            'c' => self.checkKeyword(1, 4, "lass", .lox_class),
+            'e' => self.checkKeyword(1, 3, "lse", .lox_else),
+            'f' => blk: {
+                if (@ptrToInt(self.current) - @ptrToInt(self.start) > 1) {
+                    break :blk switch (self.start[1]) {
+                        'a' => self.checkKeyword(2, 3, "lse", .lox_false),
+                        'o' => self.checkKeyword(2, 1, "r", .lox_for),
+                        'u' => self.checkKeyword(2, 1, "n", .lox_fun),
+                        else => .identifier,
+                    };
+                } else break :blk .identifier;
+            },
+            't' => blk: {
+                if (@ptrToInt(self.current) - @ptrToInt(self.start) > 1) {
+                    break :blk switch (self.start[1]) {
+                        'h' => self.checkKeyword(2, 2, "is", .lox_this),
+                        'r' => self.checkKeyword(2, 2, "ue", .lox_true),
+                        else => .identifier,
+                    };
+                } else break :blk .identifier;
+            },
+            'i' => self.checkKeyword(1, 1, "f", .lox_if),
+            'n' => self.checkKeyword(1, 2, "il", .lox_nil),
+            'o' => self.checkKeyword(1, 1, "r", .lox_or),
+            'p' => self.checkKeyword(1, 4, "rint", .lox_print),
+            'r' => self.checkKeyword(1, 5, "eturn", .lox_return),
+            's' => self.checkKeyword(1, 4, "super", .lox_super),
+            'v' => self.checkKeyword(1, 2, "ar", .lox_var),
+            'w' => self.checkKeyword(1, 4, "hile", .lox_while),
+            else => .identifier,
+        };
+    }
+
+    inline fn checkKeyword(self: *Self, comptime start: comptime_int, comptime length: comptime_int, rest: [:0]const u8, t: TokenType) TokenType {
+        if (@ptrToInt(self.current) - @ptrToInt(self.start) == start + length and
+            std.mem.eql(u8, (self.start + start)[0..length], rest[0..length]))
+        {
+            return t;
+        }
+        return .identifier;
     }
 
     fn isAtEnd(self: *Self) bool {
