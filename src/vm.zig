@@ -11,22 +11,31 @@ pub const VM = struct {
     const Value = value.Value;
     const stack_max = 256;
     var stack: [stack_max]Value = undefined;
-
-    chunk: *Chunk,
+    alloc: std.mem.Allocator,
+    chunk: *Chunk = undefined,
     ip: [*]u8 = undefined,
     stack_top: [*]Value = undefined,
 
-    fn initVM(c: *Chunk) VM {
-        var vm: VM = .{ .chunk = c };
+    fn initVM(alloc: std.mem.Allocator) VM {
+        var vm: VM = .{ .alloc = alloc };
         vm.resetStack();
         return vm;
     }
 
     fn freeVM() void {}
 
-    pub fn interpret(source: [:0]const u8) InterpretResult {
-        compiler.compile(source);
-        return .interpret_ok;
+    pub fn interpret(self: *VM, source: [:0]const u8) InterpretResult {
+        var c = chunk.Chunk.init(self.alloc);
+        defer c.freeChunk();
+
+        if (!compiler.compile(source, &c)) {
+            return .interpret_compile_error;
+        }
+
+        self.chunk = c;
+        self.ip = self.chunk.code;
+
+        return self.run();
     }
 
     fn run(self: *VM) InterpretResult {

@@ -140,10 +140,6 @@ pub const Scanner = struct {
         return self.makeToken(.string);
     }
 
-    inline fn isAlpha(char: u8) bool {
-        return std.ascii.isAlpha(char) or char == '_';
-    }
-
     fn identifierType(self: *Self) TokenType {
         return switch (self.start[0]) {
             'a' => self.checkKeyword(1, 2, "nd", .lox_and),
@@ -178,6 +174,10 @@ pub const Scanner = struct {
             'w' => self.checkKeyword(1, 4, "hile", .lox_while),
             else => .identifier,
         };
+    }
+
+    inline fn isAlpha(char: u8) bool {
+        return std.ascii.isAlpha(char) or char == '_';
     }
 
     inline fn checkKeyword(self: *Self, comptime start: comptime_int, comptime length: comptime_int, rest: [:0]const u8, t: TokenType) TokenType {

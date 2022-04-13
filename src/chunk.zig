@@ -40,9 +40,9 @@ pub const Chunk = struct {
         self.count += 1;
     }
 
-    pub fn addConstant(self: *Chunk, value: Value) u8 {
+    pub fn addConstant(self: *Chunk, value: Value) u32 {
         self.constants.writeValueArray(value);
-        return @intCast(u8, self.constants.count - 1);
+        return @intCast(u32, self.constants.count - 1);
     }
 
     pub fn freeChunk(self: *Chunk) void {

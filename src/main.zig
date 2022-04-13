@@ -73,30 +73,4 @@ fn readFile(path: []const u8) [:0]const u8 {
     return buffer[0..length :0];
 }
 
-test "chunks" {
-    const debug = @import("./debug.zig");
-    const a = std.testing.allocator;
-    var c = chunk.Chunk.init(a);
-    var constant = c.addConstant(1.2);
-    c.writeChunk(@enumToInt(chunk.OpCode.op_constant), 123);
-    c.writeChunk(constant, 123);
-
-    constant = c.addConstant(3.4);
-    c.writeChunk(@enumToInt(chunk.OpCode.op_constant), 123);
-    c.writeChunk(constant, 123);
-
-    c.writeChunk(@enumToInt(chunk.OpCode.op_add), 123);
-
-    constant = c.addConstant(5.6);
-    c.writeChunk(@enumToInt(chunk.OpCode.op_constant), 123);
-    c.writeChunk(constant, 123);
-
-    c.writeChunk(@enumToInt(chunk.OpCode.op_divide), 123);
-    c.writeChunk(@enumToInt(chunk.OpCode.op_negate), 123);
-    c.writeChunk(@enumToInt(chunk.OpCode.op_return), 123);
-    std.debug.print("\nDISASM\n", .{});
-    debug.disassembleChunk(&c, "test chunk"[0..]);
-    std.debug.print("\nEXEC\n", .{});
-    _ = vm.interpret(&c);
-    c.freeChunk();
-}
+test "chunks" {}
