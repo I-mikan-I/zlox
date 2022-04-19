@@ -1,9 +1,10 @@
 const std = @import("std");
-const stdout = std.io.getStdOut().writer();
-const stderr = std.io.getStdErr().writer();
 const scanner = @import("./scanner.zig");
 const Chunk = @import("./chunk.zig").Chunk;
 const Value = @import("./value.zig").Value;
+
+const stdout = std.io.getStdOut().writer();
+const stderr = std.io.getStdErr().writer();
 
 const Parser = struct {
     current: scanner.Token = undefined,

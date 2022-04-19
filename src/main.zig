@@ -1,11 +1,11 @@
 const std = @import("std");
 const chunk = @import("./chunk.zig");
+const vm = @import("./vm.zig");
+
 const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
-
 var alloc = std.testing.allocator; // todo: replace
 
-const vm = @import("./vm.zig");
 
 pub fn main() anyerror!void {
     var args = std.process.args();

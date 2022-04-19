@@ -1,5 +1,6 @@
 const std = @import("std");
 const memory = @import("./memory.zig");
+
 pub const Value = f64;
 
 pub fn printValue(v: Value, writer: anytype) void {

@@ -1,4 +1,5 @@
 const std = @import("std");
+
 pub fn growArray(comptime t: type, ptr: [*]t, old_cap: u32, new_cap: u32, alloc: std.mem.Allocator) [*]t {
     return reallocate(ptr, old_cap, new_cap, alloc) orelse ptr;
 }

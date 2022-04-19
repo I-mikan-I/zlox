@@ -4,8 +4,9 @@ const debug = @import("./debug.zig");
 const compiler = @import("./compiler.zig");
 const value = @import("./value.zig");
 const common = @import("./common.zig");
-const stdout = std.io.getStdOut().writer();
 const Chunk = chunk.Chunk;
+
+const stdout = std.io.getStdOut().writer();
 
 pub const VM = struct {
     const Value = value.Value;
