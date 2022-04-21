@@ -6,8 +6,11 @@ const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
 var alloc = std.testing.allocator; // todo: replace
 
+var v: vm.VM = undefined;
 
 pub fn main() anyerror!void {
+    v = vm.VM.initVM(alloc);
+    defer v.freeVM();
     var args = std.process.args();
     _ = args.skip();
     var argv: [1][]const u8 = undefined;
@@ -34,7 +37,7 @@ fn repl() void {
         if (stdin.readUntilDelimiterOrEof(&line, '\n') catch null) |slice| {
             var source = line[0 .. slice.len + 1];
             source[slice.len] = 0;
-            _ = vm.VM.interpret(source[0..slice.len :0]);
+            _ = v.interpret(source[0..slice.len :0]);
         } else {
             stdout.print("\n", .{}) catch unreachable;
             break;
@@ -44,7 +47,7 @@ fn repl() void {
 
 fn runFile(path: []const u8) void {
     const source = readFile(path);
-    const result = vm.VM.interpret(source);
+    const result = v.interpret(source);
     alloc.free(source);
     switch (result) {
         vm.InterpretResult.interpret_compile_error => std.os.exit(65),

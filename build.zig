@@ -13,6 +13,7 @@ pub fn build(b: *std.build.Builder) void {
 
     var options = b.addOptions();
     options.addOption(bool, "trace_enable", b.option(bool, "enable-tracing", "enables Lox VM tracing.") orelse false);
+    options.addOption(bool, "dump_code", b.option(bool, "enable-dump", "enables bytecode printing after compilation.") orelse false);
     const exe = b.addExecutable("zlox", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);

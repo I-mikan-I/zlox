@@ -17,13 +17,15 @@ pub const VM = struct {
     ip: [*]u8 = undefined,
     stack_top: [*]Value = undefined,
 
-    fn initVM(alloc: std.mem.Allocator) VM {
+    pub fn initVM(alloc: std.mem.Allocator) VM {
         var vm: VM = .{ .alloc = alloc };
         vm.resetStack();
         return vm;
     }
 
-    fn freeVM() void {}
+    pub fn freeVM(self: *VM) void {
+        self.chunk.freeChunk();
+    }
 
     pub fn interpret(self: *VM, source: [:0]const u8) InterpretResult {
         var c = chunk.Chunk.init(self.alloc);
@@ -33,7 +35,7 @@ pub const VM = struct {
             return .interpret_compile_error;
         }
 
-        self.chunk = c;
+        self.chunk = &c;
         self.ip = self.chunk.code;
 
         return self.run();

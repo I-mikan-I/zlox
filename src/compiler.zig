@@ -1,7 +1,11 @@
 const std = @import("std");
 const scanner = @import("./scanner.zig");
+const common = @import("./common.zig");
+const debug = @import("./debug.zig");
 const Chunk = @import("./chunk.zig").Chunk;
 const Value = @import("./value.zig").Value;
+const OpCode = @import("./chunk.zig").OpCode;
+const TokenType = scanner.TokenType;
 
 const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
@@ -15,7 +19,7 @@ const Parser = struct {
 
 const Precedence = enum(u8) {
     prec_none,
-    prec_assigment,
+    prec_assignment,
     prec_or,
     prec_and,
     prec_equality,
@@ -27,9 +31,37 @@ const Precedence = enum(u8) {
     prec_primary,
 };
 
+const ParseFn = fn () void;
+
+const ParseRule = struct {
+    prefix: ?ParseFn,
+    infix: ?ParseFn,
+    precedence: Precedence,
+};
+
+const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
+    comptime var tmp: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = .{.{ .prefix = null, .infix = null, .precedence = .prec_none }} ** (@enumToInt(TokenType.lox_eof) + 1);
+    tmp[@enumToInt(TokenType.left_paren)] = .{ .prefix = grouping, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.minus)] = .{ .prefix = unary, .infix = binary, .precedence = .prec_term };
+    tmp[@enumToInt(TokenType.plus)] = .{ .prefix = null, .infix = binary, .precedence = .prec_term };
+    tmp[@enumToInt(TokenType.slash)] = .{ .prefix = null, .infix = binary, .precedence = .prec_factor };
+    tmp[@enumToInt(TokenType.star)] = .{ .prefix = null, .infix = binary, .precedence = .prec_factor };
+    tmp[@enumToInt(TokenType.number)] = .{ .prefix = number, .infix = null, .precedence = .prec_none };
+    break :blk tmp;
+};
+
 var p: Parser = undefined;
 var s: scanner.Scanner = undefined;
 var c: *Chunk = undefined;
+
+fn getRule(t: TokenType) *const ParseRule {
+    var tmp1 = t;
+    _ = tmp1;
+    _ = t;
+    var tmp2: []const ParseRule = &rules;
+    _ = tmp2;
+    return &tmp2[@enumToInt(tmp1)];
+}
 
 fn currentChunk() *Chunk {
     return c;
@@ -51,7 +83,10 @@ fn expression() void {
 }
 
 fn number() void {
-    var value = std.fmt.parseFloat(i64, parser.previous.start[0..parser.previous.length]);
+    var value = std.fmt.parseFloat(f64, p.previous.start[0..p.previous.length]) catch {
+        errorAtPrevious("Invalid character in number.");
+        return;
+    };
     emitConstant(value);
 }
 
@@ -61,30 +96,58 @@ fn grouping() void {
 }
 
 fn unary() void {
-    var operator_type = p.previous.t;
+    const operator_type = p.previous.t;
 
     parsePrecedence(.prec_unary);
 
     switch (operator_type) {
-        .minus => emitByte(.op_negate),
-        default => unreachable,
+        .minus => emitByte(@enumToInt(OpCode.op_negate)),
+        else => unreachable,
     }
 }
 
-fn parsePrecedence(precedence: Precedence) void {}
+fn binary() void {
+    const operator_type = p.previous.t;
+    const rule = getRule(operator_type);
+    parsePrecedence(@intToEnum(Precedence, @enumToInt(rule.precedence) + 1));
+    switch (operator_type) {
+        .plus => emitByte(@enumToInt(OpCode.op_add)),
+        .minus => emitByte(@enumToInt(OpCode.op_subtract)),
+        .star => emitByte(@enumToInt(OpCode.op_multiply)),
+        .slash => emitByte(@enumToInt(OpCode.op_divide)),
+        else => return,
+    }
+}
+
+fn parsePrecedence(precedence: Precedence) void {
+    advance();
+    const prefix_rule = getRule(p.previous.t).prefix;
+    if (prefix_rule) |rule| {
+        rule();
+    } else {
+        errorAtPrevious("Expect expression.");
+        return;
+    }
+
+    while (@enumToInt(precedence) <= @enumToInt(getRule(p.current.t).precedence)) {
+        advance();
+        const infix_rule = getRule(p.previous.t).infix;
+        infix_rule.?();
+    }
+}
 
 fn advance() void {
-    parser.previous = parser.current;
+    p.previous = p.current;
 
     while (true) {
-        parser.current = s.scanToken();
-        if (parser.current.t != .lox_error) break;
+        p.current = s.scanToken();
+        if (p.current.t != .lox_error) break;
 
-        errorAtCurrent(parser.current.start);
+        errorAtCurrent(p.current.start[0..p.current.length]);
     }
 }
 
-fn consume(t: scanner.TokenType, message: []const u8) void {
+fn consume(t: TokenType, message: []const u8) void {
     if (p.current.t == t) {
         advance();
         return;
@@ -100,11 +163,11 @@ fn makeConstant(value: Value) u8 {
         return 0;
     }
 
-    return @floatToInt(u8, constant);
+    return @intCast(u8, constant);
 }
 
 fn emitByte(byte: u8) void {
-    writeChunk(currentChunk(), byte, parser.previous.line);
+    currentChunk().writeChunk(byte, @intCast(u32, p.previous.line));
 }
 
 fn emitBytes(bytes: []const u8) void {
@@ -114,21 +177,27 @@ fn emitBytes(bytes: []const u8) void {
 }
 
 fn emitReturn() void {
-    emitByte(.op_return);
+    emitByte(@enumToInt(OpCode.op_return));
 }
 
 fn emitConstant(value: Value) void {
-    emitBytes(.{ @enumToInt(.op_constant), makeConstant(value) });
+    emitBytes(&.{ @enumToInt(OpCode.op_constant), makeConstant(value) });
 }
 
 fn endCompiler() void {
     emitReturn();
+    if (comptime common.dump_enabled) {
+        if (!p.had_error) {
+            debug.disassembleChunk(currentChunk(), "code");
+        }
+    }
 }
 
 fn errorAtCurrent(message: []const u8) void {
     errorAt(&p.current, message);
 }
 
+// aka error()
 fn errorAtPrevious(message: []const u8) void {
     errorAt(&p.previous, message);
 }
