@@ -66,7 +66,6 @@ pub const VM = struct {
                 .op_constant => {
                     const constant = self.readConstant();
                     self.push(constant);
-                    stdout.print("\n", .{}) catch unreachable;
                 },
                 .op_negate => {
                     self.push(-self.pop());
