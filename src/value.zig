@@ -1,10 +1,51 @@
 const std = @import("std");
 const memory = @import("./memory.zig");
 
-pub const Value = f64;
+pub const ValueType = enum {
+    val_bool,
+    val_nil,
+    val_number,
+};
+
+pub const Value = struct {
+    t: ValueType,
+    as: union {
+        boolean: bool,
+        number: f64,
+    },
+
+    pub inline fn Boolean(value: bool) Value {
+        return .{ .t = .val_bool, .as = .{
+            .boolean = value,
+        } };
+    }
+    pub inline fn Nil() Value {
+        return .{ .t = .val_nil, .as = .{
+            .number = 0,
+        } };
+    }
+    pub inline fn Number(value: f64) Value {
+        return .{ .t = .val_number, .as = .{
+            .number = value,
+        } };
+    }
+    pub inline fn IsBool(self: *const Value) bool {
+        return self.t == .val_bool;
+    }
+    pub inline fn IsNumber(self: *const Value) bool {
+        return self.t == .val_number;
+    }
+    pub inline fn IsNil(self: *const Value) bool {
+        return self.t == .val_nil;
+    }
+};
 
 pub fn printValue(v: Value, writer: anytype) void {
-    writer.print("{d}", .{v}) catch unreachable;
+    switch (v.t) {
+        .val_bool => (if (v.as.boolean) writer.print("true", .{}) else writer.print("false", .{})) catch unreachable,
+        .val_nil => writer.print("nil", .{}) catch unreachable,
+        .val_number => writer.print("{d}", .{v.as.number}) catch unreachable,
+    }
 }
 
 pub const ValueArray = struct {

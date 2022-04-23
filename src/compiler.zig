@@ -43,10 +43,20 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     comptime var tmp: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = .{.{ .prefix = null, .infix = null, .precedence = .prec_none }} ** (@enumToInt(TokenType.lox_eof) + 1);
     tmp[@enumToInt(TokenType.left_paren)] = .{ .prefix = grouping, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.minus)] = .{ .prefix = unary, .infix = binary, .precedence = .prec_term };
+    tmp[@enumToInt(TokenType.bang)] = .{ .prefix = unary, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.bang_equal)] = .{ .prefix = null, .infix = binary, .precedence = .prec_equality };
+    tmp[@enumToInt(TokenType.equal_equal)] = .{ .prefix = null, .infix = binary, .precedence = .prec_equality };
+    tmp[@enumToInt(TokenType.greater)] = .{ .prefix = null, .infix = binary, .precedence = .prec_comparison };
+    tmp[@enumToInt(TokenType.greater_equal)] = .{ .prefix = null, .infix = binary, .precedence = .prec_comparison };
+    tmp[@enumToInt(TokenType.less)] = .{ .prefix = null, .infix = binary, .precedence = .prec_comparison };
+    tmp[@enumToInt(TokenType.less_equal)] = .{ .prefix = null, .infix = binary, .precedence = .prec_comparison };
     tmp[@enumToInt(TokenType.plus)] = .{ .prefix = null, .infix = binary, .precedence = .prec_term };
     tmp[@enumToInt(TokenType.slash)] = .{ .prefix = null, .infix = binary, .precedence = .prec_factor };
     tmp[@enumToInt(TokenType.star)] = .{ .prefix = null, .infix = binary, .precedence = .prec_factor };
     tmp[@enumToInt(TokenType.number)] = .{ .prefix = number, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.lox_false)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.lox_true)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.lox_nil)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
     break :blk tmp;
 };
 
@@ -55,12 +65,7 @@ var s: scanner.Scanner = undefined;
 var c: *Chunk = undefined;
 
 fn getRule(t: TokenType) *const ParseRule {
-    var tmp1 = t;
-    _ = tmp1;
-    _ = t;
-    var tmp2: []const ParseRule = &rules;
-    _ = tmp2;
-    return &tmp2[@enumToInt(tmp1)];
+    return &rules[@enumToInt(t)];
 }
 
 fn currentChunk() *Chunk {
@@ -87,7 +92,7 @@ fn number() void {
         errorAtPrevious("Invalid character in number.");
         return;
     };
-    emitConstant(value);
+    emitConstant(Value.Number(value));
 }
 
 fn grouping() void {
@@ -101,6 +106,7 @@ fn unary() void {
     parsePrecedence(.prec_unary);
 
     switch (operator_type) {
+        .bang => emitByte(@enumToInt(OpCode.op_not)),
         .minus => emitByte(@enumToInt(OpCode.op_negate)),
         else => unreachable,
     }
@@ -111,11 +117,26 @@ fn binary() void {
     const rule = getRule(operator_type);
     parsePrecedence(@intToEnum(Precedence, @enumToInt(rule.precedence) + 1));
     switch (operator_type) {
+        .bang_equal => emitBytes(&.{ @enumToInt(OpCode.op_equal), @enumToInt(OpCode.op_not) }),
+        .equal_equal => emitByte(@enumToInt(OpCode.op_equal)),
+        .greater => emitByte(@enumToInt(OpCode.op_greater)),
+        .greater_equal => emitBytes(&.{ @enumToInt(OpCode.op_less), @enumToInt(OpCode.op_not) }),
+        .less => emitByte(@enumToInt(OpCode.op_less)),
+        .less_equal => emitBytes(&.{ @enumToInt(OpCode.op_greater), @enumToInt(OpCode.op_not) }),
         .plus => emitByte(@enumToInt(OpCode.op_add)),
         .minus => emitByte(@enumToInt(OpCode.op_subtract)),
         .star => emitByte(@enumToInt(OpCode.op_multiply)),
         .slash => emitByte(@enumToInt(OpCode.op_divide)),
         else => return,
+    }
+}
+
+fn literal() void {
+    switch (p.previous.t) {
+        .lox_false => emitByte(@enumToInt(OpCode.op_false)),
+        .lox_true => emitByte(@enumToInt(OpCode.op_true)),
+        .lox_nil => emitByte(@enumToInt(OpCode.op_nil)),
+        else => unreachable,
     }
 }
 

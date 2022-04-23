@@ -23,11 +23,18 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
     return switch (@intToEnum(chunk.OpCode, instruction)) {
         .op_return => simpleInstruction("OP_RETURN", offset),
         .op_constant => constantInstruction("OP_CONSTANT", c, offset),
+        .op_not => simpleInstruction("OP_NOT", offset),
         .op_negate => simpleInstruction("OP_NEGATE", offset),
         .op_add => simpleInstruction("OP_ADD", offset),
         .op_subtract => simpleInstruction("OP_SUBTRACT", offset),
         .op_multiply => simpleInstruction("OP_MULTIPLY", offset),
         .op_divide => simpleInstruction("OP_DIVIDE", offset),
+        .op_nil => simpleInstruction("OP_NIL", offset),
+        .op_true => simpleInstruction("OP_TRUE", offset),
+        .op_false => simpleInstruction("OP_FALSE", offset),
+        .op_equal => simpleInstruction("OP_EQUAL", offset),
+        .op_greater => simpleInstruction("OP_GREATER", offset),
+        .op_less => simpleInstruction("OP_LESS", offset),
         // else => blk: {
         //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
         //     break :blk offset + 1;
