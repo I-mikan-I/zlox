@@ -1,10 +1,13 @@
 const std = @import("std");
 const memory = @import("./memory.zig");
+const object = @import("./object.zig");
+const Obj = object.Obj;
 
 pub const ValueType = enum {
     val_bool,
     val_nil,
     val_number,
+    val_obj,
 };
 
 pub const Value = struct {
@@ -12,6 +15,7 @@ pub const Value = struct {
     as: union {
         boolean: bool,
         number: f64,
+        obj: *Obj,
     },
 
     pub inline fn Boolean(value: bool) Value {
@@ -29,14 +33,26 @@ pub const Value = struct {
             .number = value,
         } };
     }
-    pub inline fn IsBool(self: *const Value) bool {
+    pub inline fn Object(obj: *Obj) Value {
+        return .{ .t = .val_obj, .as = .{
+            .obj = obj,
+        } };
+    }
+    pub inline fn isBool(self: *const Value) bool {
         return self.t == .val_bool;
     }
-    pub inline fn IsNumber(self: *const Value) bool {
+    pub inline fn isNumber(self: *const Value) bool {
         return self.t == .val_number;
     }
-    pub inline fn IsNil(self: *const Value) bool {
+    pub inline fn isNil(self: *const Value) bool {
         return self.t == .val_nil;
+    }
+    pub inline fn isObject(self: *const Value) bool {
+        return self.t == .val_obj;
+    }
+    pub inline fn isString(self: *const Value) bool {
+        if (!self.isObject()) return false;
+        return self.as.obj.t == .obj_string;
     }
 };
 
@@ -45,6 +61,22 @@ pub fn printValue(v: Value, writer: anytype) void {
         .val_bool => (if (v.as.boolean) writer.print("true", .{}) else writer.print("false", .{})) catch unreachable,
         .val_nil => writer.print("nil", .{}) catch unreachable,
         .val_number => writer.print("{d}", .{v.as.number}) catch unreachable,
+        .val_obj => v.as.obj.print(writer),
+    }
+}
+
+pub fn valuesEqual(val1: Value, val2: Value) bool {
+    if (val1.t != val2.t) return false;
+    switch (val1.t) {
+        .val_bool => return val1.as.boolean == val2.as.boolean,
+        .val_nil => return true,
+        .val_number => return val1.as.number == val2.as.number,
+        .val_obj => {
+            const val1_string = val1.as.obj.asString();
+            const val2_string = val2.as.obj.asString();
+            return val1_string.length == val2_string.length and
+                std.mem.eql(u8, val1_string.chars[0..val1_string.length], val2_string.chars[0..val1_string.length]);
+        },
     }
 }
 

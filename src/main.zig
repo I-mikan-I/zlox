@@ -4,7 +4,7 @@ const vm = @import("./vm.zig");
 
 const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
-var alloc = std.testing.allocator; // todo: replace
+var alloc = @import("./common.zig").alloc;
 
 var v: vm.VM = undefined;
 
@@ -76,4 +76,14 @@ fn readFile(path: []const u8) [:0]const u8 {
     return buffer[0..length :0];
 }
 
-test "chunks" {}
+test "main-test" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    try std.testing.expectEqual(v.interpret("-(3*8) == ---24"), vm.InterpretResult.interpret_ok);
+}
+
+test "main-string" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    try std.testing.expectEqual(v.interpret("\"hello!\""), vm.InterpretResult.interpret_ok);
+}

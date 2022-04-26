@@ -2,6 +2,8 @@ const std = @import("std");
 const chunk = @import("./chunk.zig");
 const debug = @import("./debug.zig");
 const compiler = @import("./compiler.zig");
+const memory = @import("./memory.zig");
+const object = @import("./object.zig");
 const value = @import("./value.zig");
 const common = @import("./common.zig");
 const Chunk = chunk.Chunk;
@@ -12,7 +14,8 @@ const stderr = std.io.getStdErr().writer();
 pub const VM = struct {
     const Value = value.Value;
     const stack_max = 256;
-    var stack: [stack_max]Value = undefined;
+    pub var objects: ?*object.Obj = null; // linked list of allocated objects
+    stack: *[stack_max]Value = undefined,
     alloc: std.mem.Allocator,
     chunk: *Chunk = undefined,
     ip: [*]u8 = undefined,
@@ -20,12 +23,14 @@ pub const VM = struct {
 
     pub fn initVM(alloc: std.mem.Allocator) VM {
         var vm: VM = .{ .alloc = alloc };
+        vm.stack = alloc.create([stack_max]Value) catch std.os.exit(1);
         vm.resetStack();
         return vm;
     }
 
     pub fn freeVM(self: *VM) void {
-        self.chunk.freeChunk();
+        memory.freeObjects(self.alloc);
+        self.alloc.destroy(self.stack);
     }
 
     pub fn interpret(self: *VM, source: [:0]const u8) InterpretResult {
@@ -46,7 +51,7 @@ pub const VM = struct {
         while (true) {
             if (common.trace_enabled) {
                 stdout.print("          ", .{}) catch unreachable;
-                for (stack) |*v| {
+                for (self.stack) |*v| {
                     if (@ptrToInt(v) >= @ptrToInt(self.stack_top)) {
                         break;
                     }
@@ -74,10 +79,10 @@ pub const VM = struct {
                 .op_equal => {
                     var a = self.pop();
                     var b = self.pop();
-                    self.push(Value.Boolean(valuesEqual(a, b)));
+                    self.push(Value.Boolean(value.valuesEqual(a, b)));
                 },
                 .op_negate => {
-                    if (!self.peek(0).IsNumber()) {
+                    if (!self.peek(0).isNumber()) {
                         self.runtimeError("Operand must be a number", .{});
                         return .interpret_runtime_error;
                     }
@@ -85,7 +90,16 @@ pub const VM = struct {
                 },
                 .op_greater => self.binary_op(common.greater) orelse return .interpret_runtime_error,
                 .op_less => self.binary_op(common.less) orelse return .interpret_runtime_error,
-                .op_add => self.binary_op(common.add) orelse return .interpret_runtime_error,
+                .op_add => {
+                    const a = self.peek(0);
+                    const b = self.peek(1);
+                    if (a.isString() and b.isString()) self.concatenate() else if (a.isNumber() and b.isNumber()) {
+                        self.push(Value.Number(a.as.number + b.as.number));
+                    } else {
+                        self.runtimeError("Operand must be two numbers or two strings.", .{});
+                        return .interpret_runtime_error;
+                    }
+                },
                 .op_subtract => self.binary_op(common.sub) orelse return .interpret_runtime_error,
                 .op_multiply => self.binary_op(common.mul) orelse return .interpret_runtime_error,
                 .op_divide => self.binary_op(common.div) orelse return .interpret_runtime_error,
@@ -95,7 +109,7 @@ pub const VM = struct {
     }
 
     fn resetStack(self: *VM) void {
-        self.stack_top = &stack;
+        self.stack_top = self.stack;
     }
 
     fn runtimeError(self: *VM, comptime format: []const u8, args: anytype) void {
@@ -109,13 +123,13 @@ pub const VM = struct {
     }
 
     fn push(self: *VM, val: Value) void {
-        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(&stack) < stack_max);
+        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(self.stack) < stack_max);
         self.stack_top.* = val;
         self.stack_top += 1;
     }
 
     fn pop(self: *VM) Value {
-        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(&stack) > 0);
+        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(self.stack) > 0);
         self.stack_top -= 1;
         return self.stack_top[0];
     }
@@ -125,16 +139,18 @@ pub const VM = struct {
     }
 
     fn isFalsey(val: Value) bool {
-        return val.IsNil() or (val.IsBool() and !val.as.boolean);
+        return val.isNil() or (val.isBool() and !val.as.boolean);
     }
 
-    fn valuesEqual(val1: Value, val2: Value) bool {
-        if (val1.t != val2.t) return false;
-        switch (val1.t) {
-            .val_bool => return val1.as.boolean == val2.as.boolean,
-            .val_nil => return true,
-            .val_number => return val1.as.number == val2.as.number,
-        }
+    fn concatenate(self: *VM) void {
+        const b = self.pop().as.obj.asString();
+        const a = self.pop().as.obj.asString();
+        const length = a.length + b.length;
+        const chars = memory.allocate(u8, length + 1, self.alloc);
+        std.mem.copy(u8, chars[0..a.length], a.chars[0..a.length]);
+        std.mem.copy(u8, chars[a.length..length], b.chars[0..b.length]);
+        chars[length] = 0;
+        self.push(Value.Object(object.takeString(chars, length)));
     }
 
     inline fn readByte(self: *VM) u8 {
@@ -148,7 +164,7 @@ pub const VM = struct {
     }
 
     inline fn binary_op(self: *VM, comptime op: fn (f64, f64) Value) ?void {
-        if (!self.peek(0).IsNumber() or !self.peek(1).IsNumber()) {
+        if (!self.peek(0).isNumber() or !self.peek(1).isNumber()) {
             self.runtimeError("Operands must be numbers.", .{});
             return null;
         }

@@ -2,6 +2,7 @@ const std = @import("std");
 const scanner = @import("./scanner.zig");
 const common = @import("./common.zig");
 const debug = @import("./debug.zig");
+const object = @import("./object.zig");
 const Chunk = @import("./chunk.zig").Chunk;
 const Value = @import("./value.zig").Value;
 const OpCode = @import("./chunk.zig").OpCode;
@@ -57,6 +58,7 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     tmp[@enumToInt(TokenType.lox_false)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.lox_true)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.lox_nil)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.string)] = .{ .prefix = string, .infix = null, .precedence = .prec_none };
     break :blk tmp;
 };
 
@@ -93,6 +95,10 @@ fn number() void {
         return;
     };
     emitConstant(Value.Number(value));
+}
+
+fn string() void {
+    emitConstant(Value.Object(object.copyString(p.previous.start + 1, p.previous.length - 2)));
 }
 
 fn grouping() void {

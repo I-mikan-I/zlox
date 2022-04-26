@@ -18,6 +18,7 @@ pub fn build(b: *std.build.Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.addOptions("build_options", options);
+    exe.linkLibC();
     exe.install();
 
     const run_cmd = exe.run();
