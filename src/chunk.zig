@@ -1,5 +1,6 @@
 const std = @import("std");
 const memory = @import("./memory.zig");
+const common = @import("./common.zig");
 const ValueArray = @import("./value.zig").ValueArray;
 const Value = @import("./value.zig").Value;
 
@@ -38,7 +39,7 @@ pub const Chunk = struct {
     pub fn writeChunk(self: *Chunk, byte: u8, line: u32) void {
         if (self.capacity <= self.count) {
             const old_c = self.capacity;
-            self.capacity = if (old_c < 8) 8 else old_c * 2;
+            self.capacity = common.growCapacity(old_c);
             self.code = memory.growArray(u8, self.code, old_c, self.capacity, self.allocator);
             self.lines = memory.growArray(u32, self.lines, old_c, self.capacity, self.allocator);
         }

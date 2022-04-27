@@ -28,3 +28,7 @@ pub fn greater(a: f64, b: f64) Value {
 pub fn less(a: f64, b: f64) Value {
     return Value.Boolean(a < b);
 }
+
+pub inline fn growCapacity(old_c: anytype) @TypeOf(old_c) {
+    return if (old_c < 8) 8 else old_c * 2;
+}
