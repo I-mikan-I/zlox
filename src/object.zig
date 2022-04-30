@@ -2,6 +2,7 @@ const std = @import("std");
 const memory = @import("./memory.zig");
 const common = @import("./common.zig");
 const VM = @import("./vm.zig").VM;
+const Value = @import("./value.zig").Value;
 const alloc = common.alloc;
 
 pub const ObjType = enum {
@@ -36,10 +37,18 @@ pub const ObjString = packed struct {
 
 pub fn copyString(chars: [*]const u8, length: usize) *Obj {
     const hash = hashString(chars, length);
-    var heap_chars = memory.allocate(u8, length + 1, alloc)[0 .. length + 1];
-    std.mem.copy(u8, heap_chars, chars[0..length]);
-    heap_chars[length] = 0;
-    return @ptrCast(*Obj, allocateString(heap_chars, hash));
+    const interned = VM.strings.findString(chars, length, hash);
+    var string: *ObjString = undefined;
+    if (interned) |i| {
+        string = i;
+    } else {
+        var heap_chars = memory.allocate(u8, length + 1, alloc)[0 .. length + 1];
+        std.mem.copy(u8, heap_chars, chars[0..length]);
+        heap_chars[length] = 0;
+        string = allocateString(heap_chars[0..length], hash);
+    }
+
+    return @ptrCast(*Obj, string);
 }
 
 fn allocateString(chars: []u8, hash: u32) *ObjString {
@@ -47,12 +56,21 @@ fn allocateString(chars: []u8, hash: u32) *ObjString {
     string.length = chars.len;
     string.chars = chars.ptr;
     string.hash = hash;
+    _ = VM.strings.tableSet(string, Value.Nil());
     return string;
 }
 
 pub fn takeString(chars: [*]u8, length: usize) *Obj {
     const hash = hashString(chars, length);
-    return @ptrCast(*Obj, allocateString(chars[0..length], hash));
+    const interned = VM.strings.findString(chars, length, hash);
+    var string: *ObjString = undefined;
+    if (interned) |i| {
+        memory.freeArray(u8, chars, length + 1, alloc);
+        string = i;
+    } else {
+        string = allocateString(chars[0..length], hash);
+    }
+    return @ptrCast(*Obj, string);
 }
 
 fn hashString(key: [*]const u8, length: usize) u32 {

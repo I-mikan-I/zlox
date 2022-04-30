@@ -71,12 +71,7 @@ pub fn valuesEqual(val1: Value, val2: Value) bool {
         .val_bool => return val1.as.boolean == val2.as.boolean,
         .val_nil => return true,
         .val_number => return val1.as.number == val2.as.number,
-        .val_obj => {
-            const val1_string = val1.as.obj.asString();
-            const val2_string = val2.as.obj.asString();
-            return val1_string.length == val2_string.length and
-                std.mem.eql(u8, val1_string.chars[0..val1_string.length], val2_string.chars[0..val1_string.length]);
-        },
+        .val_obj => return val1.as.obj == val2.as.obj,
     }
 }
 

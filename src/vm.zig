@@ -6,6 +6,7 @@ const memory = @import("./memory.zig");
 const object = @import("./object.zig");
 const value = @import("./value.zig");
 const common = @import("./common.zig");
+const Table = @import("./table.zig").Table;
 const Chunk = chunk.Chunk;
 
 const stdout = std.io.getStdOut().writer();
@@ -15,6 +16,7 @@ pub const VM = struct {
     const Value = value.Value;
     const stack_max = 256;
     pub var objects: ?*object.Obj = null; // linked list of allocated objects
+    pub var strings: Table = undefined;
     stack: *[stack_max]Value = undefined,
     alloc: std.mem.Allocator,
     chunk: *Chunk = undefined,
@@ -25,10 +27,12 @@ pub const VM = struct {
         var vm: VM = .{ .alloc = alloc };
         vm.stack = alloc.create([stack_max]Value) catch std.os.exit(1);
         vm.resetStack();
+        strings = Table.initTable();
         return vm;
     }
 
     pub fn freeVM(self: *VM) void {
+        strings.freeTable();
         memory.freeObjects(self.alloc);
         self.alloc.destroy(self.stack);
     }

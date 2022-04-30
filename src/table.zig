@@ -5,9 +5,9 @@ const Value = @import("./value.zig").Value;
 const object = @import("./object.zig");
 const ObjString = object.ObjString;
 
-const alloc = @import("./config.zig").alloc;
+const alloc = @import("./common.zig").alloc;
 
-const Table = struct {
+pub const Table = struct {
     const Self = @This();
     const max_load = 0.75;
 
@@ -15,17 +15,19 @@ const Table = struct {
     capacity: usize = 0,
     entries: [*]Entry = undefined,
 
-    fn initTable() Self {}
+    pub fn initTable() Self {
+        return .{};
+    }
 
-    fn freeTable(self: *Self) void {
-        memory.freeArray(Enttry, self.entries, self.capacity, alloc);
+    pub fn freeTable(self: *Self) void {
+        memory.freeArray(Entry, self.entries, self.capacity, alloc);
         self.capacity = 0;
         self.count = 0;
     }
 
-    fn tableSet(self: *Self, key: *ObjString, value: Value) bool {
-        if (self.count + 1 > self.capacity * max_load) {
-            const capacity = memory.growCapacity(self.capacity);
+    pub fn tableSet(self: *Self, key: *ObjString, value: Value) bool {
+        if (self.count + 1 > @floatToInt(usize, @intToFloat(f32, self.capacity) * max_load)) {
+            const capacity = common.growCapacity(self.capacity);
             self.adjustCapacity(capacity);
         }
         const entry = findEntry(self.entries, self.capacity, key);
@@ -37,7 +39,7 @@ const Table = struct {
         return isNewKey;
     }
 
-    fn tableDelete(self: *Self, key: *ObjString) bool {
+    pub fn tableDelete(self: *Self, key: *ObjString) bool {
         if (self.count == 0) return false;
 
         const entry = findEntry(self.entries, self.capacity, key);
@@ -46,6 +48,21 @@ const Table = struct {
         entry.key = null;
         entry.value = Value.Boolean(true);
         return true;
+    }
+
+    pub fn findString(self: *Self, chars: [*]const u8, length: usize, hash: u32) ?*ObjString {
+        if (self.count == 0) return null;
+
+        var index = hash % self.capacity;
+        while (true) {
+            const entry = &self.entries[index];
+            if (entry.key == null) {
+                if (entry.value.isNil()) return null;
+            } else if (entry.key.?.hash == hash and std.mem.eql(u8, entry.key.?.chars[0..length], chars[0..length])) {
+                return entry.key;
+            }
+            index = (index + 1) % self.capacity;
+        }
     }
 
     fn tableAddAll(to: *Self, from: *Self) void {
@@ -66,7 +83,7 @@ const Table = struct {
         self.count = 0;
         for (self.entries[0..self.capacity]) |*entry| {
             if (entry.key == null) continue;
-            const dest = findEntry(entries, capacity, entry.key);
+            const dest = findEntry(entries, capacity, entry.key.?);
             dest.key = entry.key;
             dest.value = entry.value;
             self.count += 1;
@@ -88,8 +105,8 @@ const Table = struct {
 };
 
 const Entry = struct {
-    key: [*]ObjString,
-    value: ?Value,
+    key: ?*ObjString,
+    value: Value,
 };
 
 fn findEntry(entries: [*]Entry, capacity: usize, key: *ObjString) *Entry {
@@ -105,5 +122,5 @@ fn findEntry(entries: [*]Entry, capacity: usize, key: *ObjString) *Entry {
             }
         } else if (entry.key == key) return entry;
     }
-    index = (idex + 1) % capacity;
+    index = (index + 1) % capacity;
 }
