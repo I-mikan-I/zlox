@@ -39,6 +39,15 @@ pub const Table = struct {
         return isNewKey;
     }
 
+    pub fn tableGet(self: *Self, key: *ObjString) ?Value {
+        if (self.count == 0) return null;
+
+        const entry = findEntry(self.entries, self.capacity, key);
+        if (entry.key == null) return null;
+
+        return entry.value;
+    }
+
     pub fn tableDelete(self: *Self, key: *ObjString) bool {
         if (self.count == 0) return false;
 
@@ -93,15 +102,6 @@ pub const Table = struct {
         self.entries = entries;
         self.capacity = capacity;
     }
-
-    fn tableGet(self: *Self, key: *ObjString) ?Value {
-        if (self.count == 0) return null;
-
-        const entry = findEntry(self.entries, self.capacity, key);
-        if (entry.key == null) return null;
-
-        return entry.value;
-    }
 };
 
 const Entry = struct {
@@ -121,6 +121,6 @@ fn findEntry(entries: [*]Entry, capacity: usize, key: *ObjString) *Entry {
                 if (tombstone == null) tombstone = entry;
             }
         } else if (entry.key == key) return entry;
+        index = (index + 1) % capacity;
     }
-    index = (index + 1) % capacity;
 }

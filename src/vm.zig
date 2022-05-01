@@ -99,6 +99,15 @@ pub const VM = struct {
                 .op_pop => {
                     _ = self.pop();
                 },
+                .op_get_global => {
+                    const name = self.readString();
+                    if (self.globals.tableGet(name)) |v| {
+                        self.push(v);
+                    } else {
+                        self.runtimeError("Undefined variable '{s}'", .{name.chars[0..name.length]});
+                        return .interpret_runtime_error;
+                    }
+                },
                 .op_define_global => {
                     const name = self.readString();
                     _ = self.globals.tableSet(name, self.peek(0));

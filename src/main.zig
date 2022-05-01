@@ -79,11 +79,11 @@ fn readFile(path: []const u8) [:0]const u8 {
 test "main-test" {
     v = vm.VM.initVM(std.testing.allocator);
     defer v.freeVM();
-    try std.testing.expectEqual(v.interpret("-(3*8) == ---24"), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqual(v.interpret("print -(3*8) == ---24;"), vm.InterpretResult.interpret_ok);
 }
 
 test "main-string" {
     v = vm.VM.initVM(std.testing.allocator);
     defer v.freeVM();
-    try std.testing.expectEqual(v.interpret("\"hello!\""), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqual(v.interpret("print \"hello!\";"), vm.InterpretResult.interpret_ok);
 }

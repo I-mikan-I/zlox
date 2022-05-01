@@ -59,6 +59,7 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     tmp[@enumToInt(TokenType.lox_true)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.lox_nil)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.string)] = .{ .prefix = string, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.identifier)] = .{ .prefix = variable, .infix = null, .precedence = .prec_none };
     break :blk tmp;
 };
 
@@ -146,6 +147,15 @@ fn number() void {
 
 fn string() void {
     emitConstant(Value.Object(object.copyString(p.previous.start + 1, p.previous.length - 2)));
+}
+
+fn variable() void {
+    namedVariable(&p.previous);
+}
+
+fn namedVariable(name: *scanner.Token) void {
+    const arg = identifierConstant(name);
+    emitBytes(&.{ @enumToInt(OpCode.op_get_global), arg });
 }
 
 fn grouping() void {
