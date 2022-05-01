@@ -35,6 +35,9 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         .op_equal => simpleInstruction("OP_EQUAL", offset),
         .op_greater => simpleInstruction("OP_GREATER", offset),
         .op_less => simpleInstruction("OP_LESS", offset),
+        .op_print => simpleInstruction("OP_PRINT", offset),
+        .op_pop => simpleInstruction("OP_POP", offset),
+        .op_define_global => constantInstruction("OP_DEFINE_GLOBAL", c, offset),
         // else => blk: {
         //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
         //     break :blk offset + 1;

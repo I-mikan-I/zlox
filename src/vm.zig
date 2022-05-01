@@ -17,6 +17,7 @@ pub const VM = struct {
     const stack_max = 256;
     pub var objects: ?*object.Obj = null; // linked list of allocated objects
     pub var strings: Table = undefined;
+    globals: Table = Table.initTable(),
     stack: *[stack_max]Value = undefined,
     alloc: std.mem.Allocator,
     chunk: *Chunk = undefined,
@@ -33,6 +34,7 @@ pub const VM = struct {
 
     pub fn freeVM(self: *VM) void {
         strings.freeTable();
+        self.globals.freeTable();
         memory.freeObjects(self.alloc);
         self.alloc.destroy(self.stack);
     }
@@ -69,8 +71,6 @@ pub const VM = struct {
             const inst = @intToEnum(chunk.OpCode, self.readByte());
             switch (inst) {
                 .op_return => {
-                    value.printValue(self.pop(), stdout);
-                    stdout.print("\n", .{}) catch unreachable;
                     return .interpret_ok;
                 },
                 .op_constant => {
@@ -92,12 +92,26 @@ pub const VM = struct {
                     }
                     self.push(Value.Number(-(self.pop().as.number)));
                 },
+                .op_print => {
+                    value.printValue(self.pop(), stdout);
+                    stdout.print("\n", .{}) catch unreachable;
+                },
+                .op_pop => {
+                    _ = self.pop();
+                },
+                .op_define_global => {
+                    const name = self.readString();
+                    _ = self.globals.tableSet(name, self.peek(0));
+                    _ = self.pop();
+                },
                 .op_greater => self.binary_op(common.greater) orelse return .interpret_runtime_error,
                 .op_less => self.binary_op(common.less) orelse return .interpret_runtime_error,
                 .op_add => {
                     const a = self.peek(0);
                     const b = self.peek(1);
                     if (a.isString() and b.isString()) self.concatenate() else if (a.isNumber() and b.isNumber()) {
+                        _ = self.pop();
+                        _ = self.pop();
                         self.push(Value.Number(a.as.number + b.as.number));
                     } else {
                         self.runtimeError("Operand must be two numbers or two strings.", .{});
@@ -165,6 +179,10 @@ pub const VM = struct {
 
     inline fn readConstant(self: *VM) Value {
         return self.chunk.constants.values[self.readByte()];
+    }
+
+    inline fn readString(self: *VM) *object.ObjString {
+        return self.readConstant().as.obj.asString();
     }
 
     inline fn binary_op(self: *VM, comptime op: fn (f64, f64) Value) ?void {

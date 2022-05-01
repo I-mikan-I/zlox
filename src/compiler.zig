@@ -79,14 +79,61 @@ pub fn compile(source: [:0]const u8, chunk: *Chunk) bool {
     s = scanner.Scanner.init(source);
     c = chunk;
     advance();
-    expression();
-    consume(.lox_eof, "Expect end of expression.");
+    while (!match(.lox_eof)) declaration();
     endCompiler();
     return !p.had_error;
 }
 
+fn synchronize() void {
+    p.panic_mode = false;
+
+    while (p.current.t != .lox_eof) {
+        if (p.previous.t == .semicolon) return;
+        switch (p.current.t) {
+            .lox_class, .lox_fun, .lox_var, .lox_for, .lox_if, .lox_while, .lox_print, .lox_return => return,
+            else => {},
+        }
+        advance();
+    }
+}
+
 fn expression() void {
     parsePrecedence(.prec_assignment);
+}
+
+fn varDeclaration() void {
+    const global = parseVariable("Expect variable name.");
+
+    if (match(.equal)) expression() else emitByte(@enumToInt(OpCode.op_nil));
+    consume(.semicolon, "Expect ';' after a variable declaration.");
+
+    defineVariable(global);
+}
+
+fn defineVariable(global: u8) void {
+    emitBytes(&.{ @enumToInt(OpCode.op_define_global), global });
+}
+
+fn expressionStatement() void {
+    expression();
+    consume(.semicolon, "Expect ';' after expression.");
+    emitByte(@enumToInt(OpCode.op_pop));
+}
+
+fn printStatement() void {
+    expression();
+    consume(.semicolon, "Expect ';' after value.");
+    emitByte(@enumToInt(OpCode.op_print));
+}
+
+fn declaration() void {
+    if (match(.lox_var)) varDeclaration() else statement();
+
+    if (p.panic_mode) synchronize();
+}
+
+fn statement() void {
+    if (match(.lox_print)) printStatement() else expressionStatement();
 }
 
 fn number() void {
@@ -163,6 +210,15 @@ fn parsePrecedence(precedence: Precedence) void {
     }
 }
 
+fn parseVariable(errorMessage: []const u8) u8 {
+    consume(.identifier, errorMessage);
+    return identifierConstant(&p.previous);
+}
+
+fn identifierConstant(name: *scanner.Token) u8 {
+    return makeConstant(Value.Object(object.copyString(name.start, name.length)));
+}
+
 fn advance() void {
     p.previous = p.current;
 
@@ -181,6 +237,16 @@ fn consume(t: TokenType, message: []const u8) void {
     }
 
     errorAtCurrent(message);
+}
+
+fn match(token: TokenType) bool {
+    if (!check(token)) return false;
+    advance();
+    return true;
+}
+
+fn check(token: TokenType) bool {
+    return p.current.t == token;
 }
 
 fn makeConstant(value: Value) u8 {
