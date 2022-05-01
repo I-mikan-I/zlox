@@ -46,6 +46,7 @@ pub fn freeObjects(alloc: std.mem.Allocator) void {
         freeObject(o, alloc);
         obj = next;
     }
+    VM.objects = null;
 }
 
 fn freeObject(o: *Obj, alloc: std.mem.Allocator) void {

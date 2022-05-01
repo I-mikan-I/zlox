@@ -87,3 +87,13 @@ test "main-string" {
     defer v.freeVM();
     try std.testing.expectEqual(v.interpret("print \"hello!\";"), vm.InterpretResult.interpret_ok);
 }
+
+test "global var" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    try std.testing.expectEqual(v.interpret(
+        \\var breakfast = "corn flakes";
+        \\breakfast = breakfast + " " + breakfast;
+        \\print breakfast;
+    ), vm.InterpretResult.interpret_ok);
+}

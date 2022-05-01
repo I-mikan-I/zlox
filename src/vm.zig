@@ -113,6 +113,14 @@ pub const VM = struct {
                     _ = self.globals.tableSet(name, self.peek(0));
                     _ = self.pop();
                 },
+                .op_set_global => {
+                    const name = self.readString();
+                    if (self.globals.tableSet(name, self.peek(0))) {
+                        _ = self.globals.tableDelete(name);
+                        self.runtimeError("Undefined variable '{s}'", .{name.chars[0..name.length]});
+                        return .interpret_runtime_error;
+                    }
+                },
                 .op_greater => self.binary_op(common.greater) orelse return .interpret_runtime_error,
                 .op_less => self.binary_op(common.less) orelse return .interpret_runtime_error,
                 .op_add => {

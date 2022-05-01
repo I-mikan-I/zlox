@@ -32,7 +32,7 @@ const Precedence = enum(u8) {
     prec_primary,
 };
 
-const ParseFn = fn () void;
+const ParseFn = fn (can_assign: bool) void;
 
 const ParseRule = struct {
     prefix: ?ParseFn,
@@ -137,7 +137,7 @@ fn statement() void {
     if (match(.lox_print)) printStatement() else expressionStatement();
 }
 
-fn number() void {
+fn number(_: bool) void {
     var value = std.fmt.parseFloat(f64, p.previous.start[0..p.previous.length]) catch {
         errorAtPrevious("Invalid character in number.");
         return;
@@ -145,25 +145,30 @@ fn number() void {
     emitConstant(Value.Number(value));
 }
 
-fn string() void {
+fn string(_: bool) void {
     emitConstant(Value.Object(object.copyString(p.previous.start + 1, p.previous.length - 2)));
 }
 
-fn variable() void {
-    namedVariable(&p.previous);
+fn variable(can_assign: bool) void {
+    namedVariable(&p.previous, can_assign);
 }
 
-fn namedVariable(name: *scanner.Token) void {
+fn namedVariable(name: *scanner.Token, can_assign: bool) void {
     const arg = identifierConstant(name);
-    emitBytes(&.{ @enumToInt(OpCode.op_get_global), arg });
+    if (can_assign and match(.equal)) {
+        expression();
+        emitBytes(&.{ @enumToInt(OpCode.op_set_global), arg });
+    } else {
+        emitBytes(&.{ @enumToInt(OpCode.op_get_global), arg });
+    }
 }
 
-fn grouping() void {
+fn grouping(_: bool) void {
     expression();
     consume(.right_paren, "Expect ')' after expression.");
 }
 
-fn unary() void {
+fn unary(_: bool) void {
     const operator_type = p.previous.t;
 
     parsePrecedence(.prec_unary);
@@ -175,7 +180,7 @@ fn unary() void {
     }
 }
 
-fn binary() void {
+fn binary(_: bool) void {
     const operator_type = p.previous.t;
     const rule = getRule(operator_type);
     parsePrecedence(@intToEnum(Precedence, @enumToInt(rule.precedence) + 1));
@@ -194,7 +199,7 @@ fn binary() void {
     }
 }
 
-fn literal() void {
+fn literal(_: bool) void {
     switch (p.previous.t) {
         .lox_false => emitByte(@enumToInt(OpCode.op_false)),
         .lox_true => emitByte(@enumToInt(OpCode.op_true)),
@@ -206,8 +211,10 @@ fn literal() void {
 fn parsePrecedence(precedence: Precedence) void {
     advance();
     const prefix_rule = getRule(p.previous.t).prefix;
+    var can_assign: bool = undefined;
     if (prefix_rule) |rule| {
-        rule();
+        can_assign = @enumToInt(precedence) <= @enumToInt(Precedence.prec_assignment);
+        rule(can_assign);
     } else {
         errorAtPrevious("Expect expression.");
         return;
@@ -216,7 +223,10 @@ fn parsePrecedence(precedence: Precedence) void {
     while (@enumToInt(precedence) <= @enumToInt(getRule(p.current.t).precedence)) {
         advance();
         const infix_rule = getRule(p.previous.t).infix;
-        infix_rule.?();
+        infix_rule.?(can_assign);
+    }
+    if (can_assign and match(.equal)) {
+        errorAtPrevious("Invalid assignment target.");
     }
 }
 
