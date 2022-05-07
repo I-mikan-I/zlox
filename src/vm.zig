@@ -73,6 +73,14 @@ pub const VM = struct {
                 .op_return => {
                     return .interpret_ok;
                 },
+                .op_jump => {
+                    const offset = self.readShort();
+                    self.ip += offset;
+                },
+                .op_jump_if_false => {
+                    const offset = self.readShort();
+                    if (isFalsey(self.peek(0))) self.ip += offset;
+                },
                 .op_constant => {
                     const constant = self.readConstant();
                     self.push(constant);
@@ -219,6 +227,11 @@ pub const VM = struct {
         const a = self.pop().as.number;
         self.push(op(a, b));
         return;
+    }
+
+    inline fn readShort(self: *VM) u16 {
+        self.ip += 2;
+        return (@intCast(u16, (self.ip - 2)[0]) << 8) | (self.ip - 1)[0];
     }
 };
 

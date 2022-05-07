@@ -43,6 +43,8 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         .op_set_global => constantInstruction("OP_SET_GLOBAL", c, offset),
         .op_get_local => byteInstruction("OP_GET_LOCAL", c, offset),
         .op_set_local => byteInstruction("OP_SET_LOCAL", c, offset),
+        .op_jump => jumpInstruction("OP_JUMP", 1, c, offset),
+        .op_jump_if_false => jumpInstruction("OP_JUMP_IF_FALSE", 1, c, offset),
         // else => blk: {
         //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
         //     break :blk offset + 1;
@@ -67,4 +69,12 @@ fn constantInstruction(name: []const u8, c: *chunk.Chunk, offset: u32) u32 {
     value.printValue(c.constants.values[index], stdout);
     stdout.print("'\n", .{}) catch unreachable;
     return offset + 2;
+}
+
+fn jumpInstruction(name: []const u8, sign: isize, c: *chunk.Chunk, offset: u32) u32 {
+    var jump: u16 = c.code[offset + 1];
+    jump <<= 8;
+    jump |= c.code[offset + 2];
+    stdout.print("{s:<16} {d:4} -> {d}\n", .{name, offset, offset + 3 + sign * jump}) catch unreachable;
+    return offset + 3;
 }

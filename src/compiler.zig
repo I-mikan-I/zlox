@@ -190,6 +190,22 @@ fn expressionStatement() void {
     emitByte(@enumToInt(OpCode.op_pop));
 }
 
+fn ifStatement() void {
+    consume(.left_paren, "Expect '(' after 'if'.");
+    expression();
+    consume(.right_paren, "Expect ')' after condition.");
+
+    const then_jump = emitJump(.op_jump_if_false);
+    emitByte(@enumToInt(OpCode.op_pop));
+    statement();
+    const else_jump = emitJump(.op_jump);
+    patchJump(then_jump);
+
+    emitByte(@enumToInt(OpCode.op_pop));
+    if (match(.lox_else)) statement();
+    patchJump(else_jump);
+}
+
 fn printStatement() void {
     expression();
     consume(.semicolon, "Expect ';' after value.");
@@ -203,7 +219,7 @@ fn declaration() void {
 }
 
 fn statement() void {
-    if (match(.lox_print)) printStatement() else if (match(.left_brace)) {
+    if (match(.lox_print)) printStatement() else if (match(.lox_if)) ifStatement() else if (match(.left_brace)) {
         beginScope();
         block();
         endScope();
@@ -391,6 +407,22 @@ fn emitBytes(bytes: []const u8) void {
     for (bytes) |byte| {
         emitByte(byte);
     }
+}
+
+fn emitJump(instruction: OpCode) u32 {
+    emitByte(@enumToInt(instruction));
+    emitByte(0xFF);
+    emitByte(0xFF);
+    return currentChunk().count - 2;
+}
+
+fn patchJump(offset: u32) void {
+    const jump = currentChunk().count - offset - 2;
+    if (jump > 0xFFFF) {
+        errorAtPrevious("Too much code to jump over.");
+    }
+    currentChunk().code[offset] = @truncate(u8, jump >> 8);
+    currentChunk().code[offset + 1] = @truncate(u8, jump);
 }
 
 fn emitReturn() void {
