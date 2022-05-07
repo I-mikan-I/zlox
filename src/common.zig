@@ -4,6 +4,11 @@ const builtin = @import("builtin");
 pub const alloc = if (builtin.mode == std.builtin.Mode.Debug) std.testing.allocator else std.heap.c_allocator;
 pub const trace_enabled = @import("build_options").trace_enable;
 pub const dump_enabled = @import("build_options").dump_code;
+pub const stdout = if (builtin.is_test) buffer_stream.writer() else std.io.getStdOut().writer();
+pub const stderr = std.io.getStdErr().writer();
+
+pub var buffer: if (builtin.is_test) [1 << 10 << 10]u8 else [0]u8 = if (builtin.is_test) .{0} ** (1 << 10 << 10) else .{};
+pub var buffer_stream = if (builtin.is_test) std.io.fixedBufferStream(buffer[0..]) else @compileError("only used for testing");
 
 pub fn add(a: f64, b: f64) Value {
     return Value.Number(a + b);

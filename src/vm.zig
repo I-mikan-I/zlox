@@ -9,8 +9,8 @@ const common = @import("./common.zig");
 const Table = @import("./table.zig").Table;
 const Chunk = chunk.Chunk;
 
-const stdout = std.io.getStdOut().writer();
-const stderr = std.io.getStdErr().writer();
+var stdout = common.stdout;
+var stderr = common.stderr;
 
 pub const VM = struct {
     const Value = value.Value;
@@ -99,6 +99,10 @@ pub const VM = struct {
                 .op_pop => {
                     _ = self.pop();
                 },
+                .op_get_local => {
+                    const slot = self.readByte();
+                    self.push(self.stack[slot]);
+                },
                 .op_get_global => {
                     const name = self.readString();
                     if (self.globals.tableGet(name)) |v| {
@@ -112,6 +116,10 @@ pub const VM = struct {
                     const name = self.readString();
                     _ = self.globals.tableSet(name, self.peek(0));
                     _ = self.pop();
+                },
+                .op_set_local => {
+                    const slot = self.readByte();
+                    self.stack[slot] = self.peek(0);
                 },
                 .op_set_global => {
                     const name = self.readString();

@@ -1,8 +1,9 @@
 const chunk = @import("./chunk.zig");
 const std = @import("std");
 const value = @import("./value.zig");
+const common = @import("./common.zig");
 
-const stdout = std.io.getStdOut().writer();
+const stdout = common.stdout;
 
 pub fn disassembleChunk(c: *chunk.Chunk, name: []const u8) void {
     stdout.print("== {s} ==\n", .{name}) catch unreachable;
@@ -40,6 +41,8 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         .op_define_global => constantInstruction("OP_DEFINE_GLOBAL", c, offset),
         .op_get_global => constantInstruction("OP_GET_GLOBAL", c, offset),
         .op_set_global => constantInstruction("OP_SET_GLOBAL", c, offset),
+        .op_get_local => byteInstruction("OP_GET_LOCAL", c, offset),
+        .op_set_local => byteInstruction("OP_SET_LOCAL", c, offset),
         // else => blk: {
         //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
         //     break :blk offset + 1;
@@ -50,6 +53,12 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
 fn simpleInstruction(name: []const u8, offset: u32) u32 {
     stdout.print("{s}\n", .{name}) catch unreachable;
     return offset + 1;
+}
+
+fn byteInstruction(name: []const u8, c: *chunk.Chunk, offset: u32) u32 {
+    const slot = c.code[offset + 1];
+    stdout.print("{s:<16} {d:4}\n", .{ name, slot }) catch unreachable;
+    return offset + 2;
 }
 
 fn constantInstruction(name: []const u8, c: *chunk.Chunk, offset: u32) u32 {

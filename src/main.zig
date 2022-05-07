@@ -1,8 +1,9 @@
 const std = @import("std");
 const chunk = @import("./chunk.zig");
 const vm = @import("./vm.zig");
+const common = @import("./common.zig");
 
-const stdout = std.io.getStdOut().writer();
+const stdout = common.stdout;
 const stdin = std.io.getStdIn().reader();
 var alloc = @import("./common.zig").alloc;
 
@@ -96,4 +97,24 @@ test "global var" {
         \\breakfast = breakfast + " " + breakfast;
         \\print breakfast;
     ), vm.InterpretResult.interpret_ok);
+}
+
+test "local var" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "hello another world\n";
+    try std.testing.expectEqual(v.interpret(
+        \\var global = "hello";
+        \\{
+        \\  var local = "world";
+        \\  {
+        \\    var local = " another ";
+        \\    global = global + local;
+        \\  }
+        \\  global = global + local;
+        \\}
+        \\print global;
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }

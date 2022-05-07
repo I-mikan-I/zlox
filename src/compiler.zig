@@ -7,13 +7,14 @@ const Chunk = @import("./chunk.zig").Chunk;
 const Value = @import("./value.zig").Value;
 const OpCode = @import("./chunk.zig").OpCode;
 const TokenType = scanner.TokenType;
+const Token = scanner.Token;
 
-const stdout = std.io.getStdOut().writer();
-const stderr = std.io.getStdErr().writer();
+const stdout = common.stdout;
+const stderr = common.stderr;
 
 const Parser = struct {
-    current: scanner.Token = undefined,
-    previous: scanner.Token = undefined,
+    current: Token = undefined,
+    previous: Token = undefined,
     had_error: bool = false,
     panic_mode: bool = false,
 };
@@ -40,6 +41,21 @@ const ParseRule = struct {
     precedence: Precedence,
 };
 
+const Compiler = struct {
+    locals: [256]Local = undefined,
+    local_count: u8 = 0,
+    scope_depth: usize = 0,
+
+    fn init() Compiler {
+        return .{};
+    }
+};
+
+const Local = struct {
+    name: Token,
+    depth: isize,
+};
+
 const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     comptime var tmp: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = .{.{ .prefix = null, .infix = null, .precedence = .prec_none }} ** (@enumToInt(TokenType.lox_eof) + 1);
     tmp[@enumToInt(TokenType.left_paren)] = .{ .prefix = grouping, .infix = null, .precedence = .prec_none };
@@ -64,6 +80,7 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
 };
 
 var p: Parser = undefined;
+var current: *Compiler = undefined;
 var s: scanner.Scanner = undefined;
 var c: *Chunk = undefined;
 
@@ -78,6 +95,8 @@ fn currentChunk() *Chunk {
 pub fn compile(source: [:0]const u8, chunk: *Chunk) bool {
     p = Parser{};
     s = scanner.Scanner.init(source);
+    var compiler = Compiler.init();
+    current = &compiler;
     c = chunk;
     advance();
     while (!match(.lox_eof)) declaration();
@@ -102,6 +121,23 @@ fn expression() void {
     parsePrecedence(.prec_assignment);
 }
 
+fn block() void {
+    while (!check(.right_brace) and !check(.lox_eof)) declaration();
+    consume(.right_brace, "Expect '}' after block.");
+}
+
+fn beginScope() void {
+    current.scope_depth += 1;
+}
+
+fn endScope() void {
+    current.scope_depth -= 1;
+    while (current.local_count > 0 and current.locals[@intCast(usize, current.local_count - 1)].depth > current.scope_depth) {
+        emitByte(@enumToInt(OpCode.op_pop));
+        current.local_count -= 1;
+    }
+}
+
 fn varDeclaration() void {
     const global = parseVariable("Expect variable name.");
 
@@ -112,7 +148,40 @@ fn varDeclaration() void {
 }
 
 fn defineVariable(global: u8) void {
+    if (current.scope_depth > 0) {
+        markInitialized();
+        return;
+    }
     emitBytes(&.{ @enumToInt(OpCode.op_define_global), global });
+}
+
+fn markInitialized() void {
+    current.locals[current.local_count - 1].depth = @intCast(isize, current.scope_depth);
+}
+
+fn declareVariable() void {
+    if (current.scope_depth == 0) return;
+    const name = &p.previous;
+    var i: usize = current.local_count;
+    while (i >= 0) : (i -= 1) {
+        const local = &current.locals[i];
+        if (local.depth != -1 and local.depth < current.scope_depth) break;
+        if (identifiersEqual(name, &local.name)) {
+            errorAtPrevious("Already a variable with this name in this scope.");
+        }
+    }
+    addLocal(name.*);
+}
+
+fn addLocal(name: Token) void {
+    defer current.local_count += 1;
+    if (current.local_count > 256) {
+        errorAtPrevious("Too many local variables in function.");
+        return;
+    }
+    const local = &current.locals[current.local_count];
+    local.name = name;
+    local.depth = -1;
 }
 
 fn expressionStatement() void {
@@ -134,7 +203,11 @@ fn declaration() void {
 }
 
 fn statement() void {
-    if (match(.lox_print)) printStatement() else expressionStatement();
+    if (match(.lox_print)) printStatement() else if (match(.left_brace)) {
+        beginScope();
+        block();
+        endScope();
+    } else expressionStatement();
 }
 
 fn number(_: bool) void {
@@ -153,13 +226,23 @@ fn variable(can_assign: bool) void {
     namedVariable(&p.previous, can_assign);
 }
 
-fn namedVariable(name: *scanner.Token, can_assign: bool) void {
-    const arg = identifierConstant(name);
+fn namedVariable(name: *Token, can_assign: bool) void {
+    var getOp: u8 = undefined;
+    var setOp: u8 = undefined;
+    var arg = resolveLocal(current, name);
+    if (arg) |_| {
+        getOp = @enumToInt(OpCode.op_get_local);
+        setOp = @enumToInt(OpCode.op_set_local);
+    } else {
+        arg = identifierConstant(name);
+        getOp = @enumToInt(OpCode.op_get_global);
+        setOp = @enumToInt(OpCode.op_set_global);
+    }
     if (can_assign and match(.equal)) {
         expression();
-        emitBytes(&.{ @enumToInt(OpCode.op_set_global), arg });
+        emitBytes(&.{ setOp, arg.? });
     } else {
-        emitBytes(&.{ @enumToInt(OpCode.op_get_global), arg });
+        emitBytes(&.{ getOp, arg.? });
     }
 }
 
@@ -232,11 +315,32 @@ fn parsePrecedence(precedence: Precedence) void {
 
 fn parseVariable(errorMessage: []const u8) u8 {
     consume(.identifier, errorMessage);
+    declareVariable();
+    if (current.scope_depth > 0) return 0;
     return identifierConstant(&p.previous);
 }
 
-fn identifierConstant(name: *scanner.Token) u8 {
+fn identifierConstant(name: *Token) u8 {
     return makeConstant(Value.Object(object.copyString(name.start, name.length)));
+}
+
+fn identifiersEqual(a: *Token, b: *Token) bool {
+    return std.mem.eql(u8, a.start[0..a.length], b.start[0..b.length]);
+}
+
+fn resolveLocal(compiler: *Compiler, name: *Token) ?u8 {
+    var i: isize = compiler.local_count;
+    i -= 1;
+    while (i >= 0) : (i -= 1) {
+        const local = &compiler.locals[@intCast(u8, i)];
+        if (identifiersEqual(name, &local.name)) {
+            if (local.depth == -1) {
+                errorAtPrevious("Can't read local variable in its own initializer.");
+            }
+            return @intCast(u8, i);
+        }
+    }
+    return null;
 }
 
 fn advance() void {
@@ -315,7 +419,7 @@ fn errorAtPrevious(message: []const u8) void {
     errorAt(&p.previous, message);
 }
 
-fn errorAt(token: *scanner.Token, message: []const u8) void {
+fn errorAt(token: *Token, message: []const u8) void {
     if (p.panic_mode) return;
     p.panic_mode = true;
     stderr.print("[line {d}] Error", .{token.line}) catch unreachable;
