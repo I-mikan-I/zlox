@@ -77,6 +77,10 @@ pub const VM = struct {
                     const offset = self.readShort();
                     self.ip += offset;
                 },
+                .op_loop => {
+                    const offset = self.readShort();
+                    self.ip -= offset;
+                },
                 .op_jump_if_false => {
                     const offset = self.readShort();
                     if (isFalsey(self.peek(0))) self.ip += offset;

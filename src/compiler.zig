@@ -76,6 +76,8 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     tmp[@enumToInt(TokenType.lox_nil)] = .{ .prefix = literal, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.string)] = .{ .prefix = string, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.identifier)] = .{ .prefix = variable, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.lox_and)] = .{ .prefix = null, .infix = and_, .precedence = .prec_and };
+    tmp[@enumToInt(TokenType.lox_or)] = .{ .prefix = null, .infix = or_, .precedence = .prec_or };
     break :blk tmp;
 };
 
@@ -206,10 +208,85 @@ fn ifStatement() void {
     patchJump(else_jump);
 }
 
+fn and_(_: bool) void {
+    const end_jump = emitJump(.op_jump_if_false);
+
+    emitByte(@enumToInt(OpCode.op_pop));
+    parsePrecedence(.prec_and);
+
+    patchJump(end_jump);
+}
+
+fn or_(_: bool) void {
+    const else_jump = emitJump(.op_jump_if_false);
+    const end_jump = emitJump(.op_jump);
+
+    patchJump(else_jump);
+    emitByte(@enumToInt(OpCode.op_pop));
+
+    parsePrecedence(.prec_or);
+    patchJump(end_jump);
+}
+
 fn printStatement() void {
     expression();
     consume(.semicolon, "Expect ';' after value.");
     emitByte(@enumToInt(OpCode.op_print));
+}
+
+fn whileStatement() void {
+    const loop_start = currentChunk().count;
+    consume(.left_paren, "Expect '(' after 'while'.");
+    expression();
+    consume(.right_paren, "Expect ')' after condition");
+
+    const exit_jump = emitJump(.op_jump_if_false);
+    emitByte(@enumToInt(OpCode.op_pop));
+    statement();
+    emitLoop(loop_start);
+
+    patchJump(exit_jump);
+    emitByte(@enumToInt(OpCode.op_pop));
+}
+
+fn forStatement() void {
+    beginScope();
+    defer endScope();
+    consume(.left_paren, "Expect '(' after 'for'.");
+    if (match(.semicolon)) {} else if (match(.lox_var)) {
+        varDeclaration();
+    } else {
+        expressionStatement();
+    }
+
+    var loop_start = currentChunk().count;
+    var exit_jump: ?u32 = null;
+    if (!match(.semicolon)) {
+        expression();
+        consume(.semicolon, "Expect ';' after loop condition");
+        exit_jump = emitJump(.op_jump_if_false);
+        emitByte(@enumToInt(OpCode.op_pop));
+    }
+
+    if (!match(.right_paren)) {
+        const body_jump = emitJump(.op_jump);
+        const increment_start = currentChunk().count;
+        expression();
+        emitByte(@enumToInt(OpCode.op_pop));
+        consume(.right_paren, "Expect ')' after for clauses");
+
+        emitLoop(loop_start);
+        loop_start = increment_start;
+        patchJump(body_jump);
+    }
+
+    statement();
+    emitLoop(loop_start);
+    if (exit_jump) |ej| {
+        patchJump(ej);
+        emitByte(@enumToInt(OpCode.op_pop));
+    }
+    //endScope()
 }
 
 fn declaration() void {
@@ -219,7 +296,7 @@ fn declaration() void {
 }
 
 fn statement() void {
-    if (match(.lox_print)) printStatement() else if (match(.lox_if)) ifStatement() else if (match(.left_brace)) {
+    if (match(.lox_print)) printStatement() else if (match(.lox_for)) forStatement() else if (match(.lox_if)) ifStatement() else if (match(.lox_while)) whileStatement() else if (match(.left_brace)) {
         beginScope();
         block();
         endScope();
@@ -414,6 +491,14 @@ fn emitJump(instruction: OpCode) u32 {
     emitByte(0xFF);
     emitByte(0xFF);
     return currentChunk().count - 2;
+}
+
+fn emitLoop(start: u32) void {
+    emitByte(@enumToInt(OpCode.op_loop));
+    const offset = currentChunk().count - start + 2;
+    if (offset > 0xFFFF) errorAtPrevious("Loop body too large.");
+    emitByte(@truncate(u8, offset >> 8));
+    emitByte(@truncate(u8, offset));
 }
 
 fn patchJump(offset: u32) void {
