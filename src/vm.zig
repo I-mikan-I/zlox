@@ -8,20 +8,31 @@ const value = @import("./value.zig");
 const common = @import("./common.zig");
 const Table = @import("./table.zig").Table;
 const Chunk = chunk.Chunk;
+const Value = value.Value;
+const Obj = object.Obj;
+const ObjFunction = object.ObjFunction;
 
 var stdout = common.stdout;
 var stderr = common.stderr;
 
+const CallFrame = struct {
+    function: *ObjFunction,
+    ip: [*]u8,
+    slots: [*]Value,
+};
+
 pub const VM = struct {
-    const Value = value.Value;
-    const stack_max = 256;
+    const frames_max = 64;
+    const stack_max = frames_max * 256;
     pub var objects: ?*object.Obj = null; // linked list of allocated objects
     pub var strings: Table = undefined;
+    frames: [frames_max]CallFrame = undefined,
+    frame_count: usize = 0,
+    frame: *CallFrame = undefined,
     globals: Table = Table.initTable(),
     stack: *[stack_max]Value = undefined,
     alloc: std.mem.Allocator,
     chunk: *Chunk = undefined,
-    ip: [*]u8 = undefined,
     stack_top: [*]Value = undefined,
 
     pub fn initVM(alloc: std.mem.Allocator) VM {
@@ -40,20 +51,20 @@ pub const VM = struct {
     }
 
     pub fn interpret(self: *VM, source: [:0]const u8) InterpretResult {
-        var c = chunk.Chunk.init(self.alloc);
-        defer c.freeChunk();
+        var function = compiler.compile(source) orelse return .interpret_compile_error;
 
-        if (!compiler.compile(source, &c)) {
-            return .interpret_compile_error;
-        }
-
-        self.chunk = &c;
-        self.ip = self.chunk.code;
+        self.push(Value.Object(@ptrCast(*Obj, function)));
+        const frame = &self.frames[self.frame_count];
+        self.frame_count += 1;
+        frame.function = function;
+        frame.ip = function.chunk().code;
+        frame.slots = self.stack;
 
         return self.run();
     }
 
     fn run(self: *VM) InterpretResult {
+        self.frame = &self.frames[self.frame_count - 1];
         while (true) {
             if (common.trace_enabled) {
                 stdout.print("          ", .{}) catch unreachable;
@@ -66,7 +77,7 @@ pub const VM = struct {
                     stdout.print(" ]", .{}) catch unreachable;
                 }
                 stdout.print("\n", .{}) catch unreachable;
-                _ = debug.disassembleInstruction(self.chunk, @intCast(u32, @ptrToInt(self.ip) - @ptrToInt(self.chunk.code)));
+                _ = debug.disassembleInstruction(self.frame.function.chunk(), @intCast(u32, @ptrToInt(self.frame.ip) - @ptrToInt(self.frame.function.chunk().code)));
             }
             const inst = @intToEnum(chunk.OpCode, self.readByte());
             switch (inst) {
@@ -75,15 +86,15 @@ pub const VM = struct {
                 },
                 .op_jump => {
                     const offset = self.readShort();
-                    self.ip += offset;
+                    self.frame.ip += offset;
                 },
                 .op_loop => {
                     const offset = self.readShort();
-                    self.ip -= offset;
+                    self.frame.ip -= offset;
                 },
                 .op_jump_if_false => {
                     const offset = self.readShort();
-                    if (isFalsey(self.peek(0))) self.ip += offset;
+                    if (isFalsey(self.peek(0))) self.frame.ip += offset;
                 },
                 .op_constant => {
                     const constant = self.readConstant();
@@ -113,7 +124,7 @@ pub const VM = struct {
                 },
                 .op_get_local => {
                     const slot = self.readByte();
-                    self.push(self.stack[slot]);
+                    self.push(self.frame.slots[slot]);
                 },
                 .op_get_global => {
                     const name = self.readString();
@@ -131,7 +142,7 @@ pub const VM = struct {
                 },
                 .op_set_local => {
                     const slot = self.readByte();
-                    self.stack[slot] = self.peek(0);
+                    self.frame.slots[slot] = self.peek(0);
                 },
                 .op_set_global => {
                     const name = self.readString();
@@ -171,8 +182,9 @@ pub const VM = struct {
         stderr.print(format, args) catch unreachable;
         stderr.writeByte('\n') catch unreachable;
 
-        const instruction = @ptrToInt(self.ip) - @ptrToInt(self.chunk.code) - 1;
-        const line = self.chunk.lines[instruction];
+        const frame = &self.frames[self.frame_count - 1];
+        const instruction = @ptrToInt(frame.ip) - @ptrToInt(frame.function.chunk().code) - 1;
+        const line = frame.function.chunk().lines[instruction];
         stderr.print("[line {d}] in script\n", .{line}) catch unreachable;
         self.resetStack();
     }
@@ -209,13 +221,12 @@ pub const VM = struct {
     }
 
     inline fn readByte(self: *VM) u8 {
-        const t = self.ip[0];
-        self.ip += 1;
-        return t;
+        defer self.frame.ip += 1;
+        return self.frame.ip[0];
     }
 
     inline fn readConstant(self: *VM) Value {
-        return self.chunk.constants.values[self.readByte()];
+        return self.frame.function.chunk().constants.values[self.readByte()];
     }
 
     inline fn readString(self: *VM) *object.ObjString {
@@ -234,8 +245,8 @@ pub const VM = struct {
     }
 
     inline fn readShort(self: *VM) u16 {
-        self.ip += 2;
-        return (@intCast(u16, (self.ip - 2)[0]) << 8) | (self.ip - 1)[0];
+        self.frame.ip += 2;
+        return (@intCast(u16, (self.frame.ip - 2)[0]) << 8) | (self.frame.ip - 1)[0];
     }
 };
 

@@ -3,6 +3,7 @@ const VM = @import("./vm.zig").VM;
 const object = @import("./object.zig");
 const Obj = object.Obj;
 const ObjString = object.ObjString;
+const ObjFunction = object.ObjFunction;
 
 pub fn growArray(comptime t: type, ptr: [*]t, old_cap: u32, new_cap: u32, alloc: std.mem.Allocator) [*]t {
     return reallocate(ptr, old_cap, new_cap, alloc) orelse ptr;
@@ -55,6 +56,11 @@ fn freeObject(o: *Obj, alloc: std.mem.Allocator) void {
             const str = o.asString();
             freeArray(u8, str.chars, str.length + 1, alloc);
             free(ObjString, str, alloc);
+        },
+        .obj_function => {
+            const function = @ptrCast(*ObjFunction, @alignCast(@alignOf(ObjFunction), o));
+            function.chunk().freeChunk();
+            free(ObjFunction, function, alloc);
         },
     }
 }

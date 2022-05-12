@@ -8,6 +8,7 @@ const Value = @import("./value.zig").Value;
 const OpCode = @import("./chunk.zig").OpCode;
 const TokenType = scanner.TokenType;
 const Token = scanner.Token;
+const ObjFunction = object.ObjFunction;
 
 const stdout = common.stdout;
 const stderr = common.stderr;
@@ -42,12 +43,19 @@ const ParseRule = struct {
 };
 
 const Compiler = struct {
+    function: *ObjFunction,
+    fun_t: FunctionType,
     locals: [256]Local = undefined,
     local_count: u8 = 0,
     scope_depth: usize = 0,
 
-    fn init() Compiler {
-        return .{};
+    fn init(fun_t: FunctionType) Compiler {
+        var c: Compiler = .{ .fun_t = fun_t, .function = object.newFunction() };
+        c.locals[c.local_count].depth = 0;
+        c.locals[c.local_count].name.start = "";
+        c.locals[c.local_count].name.length = 0;
+        c.local_count += 1;
+        return c;
     }
 };
 
@@ -55,6 +63,8 @@ const Local = struct {
     name: Token,
     depth: isize,
 };
+
+const FunctionType = enum { type_function, type_script };
 
 const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     comptime var tmp: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = .{.{ .prefix = null, .infix = null, .precedence = .prec_none }} ** (@enumToInt(TokenType.lox_eof) + 1);
@@ -84,26 +94,24 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
 var p: Parser = undefined;
 var current: *Compiler = undefined;
 var s: scanner.Scanner = undefined;
-var c: *Chunk = undefined;
 
 fn getRule(t: TokenType) *const ParseRule {
     return &rules[@enumToInt(t)];
 }
 
 fn currentChunk() *Chunk {
-    return c;
+    return current.function.chunk();
 }
 
-pub fn compile(source: [:0]const u8, chunk: *Chunk) bool {
+pub fn compile(source: [:0]const u8) ?*ObjFunction {
     p = Parser{};
     s = scanner.Scanner.init(source);
-    var compiler = Compiler.init();
+    var compiler = Compiler.init(.type_script);
     current = &compiler;
-    c = chunk;
     advance();
     while (!match(.lox_eof)) declaration();
-    endCompiler();
-    return !p.had_error;
+    const function = endCompiler();
+    return if (p.had_error) null else function;
 }
 
 fn synchronize() void {
@@ -518,13 +526,15 @@ fn emitConstant(value: Value) void {
     emitBytes(&.{ @enumToInt(OpCode.op_constant), makeConstant(value) });
 }
 
-fn endCompiler() void {
+fn endCompiler() *ObjFunction {
     emitReturn();
+    const function = current.function;
     if (comptime common.dump_enabled) {
         if (!p.had_error) {
-            debug.disassembleChunk(currentChunk(), "code");
+            debug.disassembleChunk(currentChunk(), if (function.name) |name| name.chars[0..name.length] else "<script>");
         }
     }
+    return function;
 }
 
 fn errorAtCurrent(message: []const u8) void {
