@@ -46,6 +46,7 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         .op_jump => jumpInstruction("OP_JUMP", 1, c, offset),
         .op_jump_if_false => jumpInstruction("OP_JUMP_IF_FALSE", 1, c, offset),
         .op_loop => jumpInstruction("OP_LOOP", -1, c, offset),
+        .op_call => byteInstruction("OP_CALL", c, offset),
         // else => blk: {
         //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
         //     break :blk offset + 1;

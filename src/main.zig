@@ -118,3 +118,39 @@ test "local var" {
     ), vm.InterpretResult.interpret_ok);
     try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }
+
+test "loops" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "1000\n";
+    try std.testing.expectEqual(v.interpret(
+        \\var counter = 0;
+        \\for (var index = 0; index < 1000; index = index + 1) {
+        \\  counter = counter + 1;
+        \\}
+        \\print counter;
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}
+
+test "functions" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "true\nfalse\ntrue\n";
+    try std.testing.expectEqual(v.interpret(
+        \\fun even(num) {
+        \\  if (num == 0) return true;
+        \\  return odd(num - 1);
+        \\}
+        \\fun odd(num) {
+        \\  if (num == 0) return false;
+        \\  return even(num - 1);
+        \\}
+        \\print even(22);
+        \\print even(21);
+        \\print odd(3);
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}

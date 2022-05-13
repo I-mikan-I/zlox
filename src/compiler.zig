@@ -43,6 +43,7 @@ const ParseRule = struct {
 };
 
 const Compiler = struct {
+    enclosing: *Compiler,
     function: *ObjFunction,
     fun_t: FunctionType,
     locals: [256]Local = undefined,
@@ -50,7 +51,10 @@ const Compiler = struct {
     scope_depth: usize = 0,
 
     fn init(fun_t: FunctionType) Compiler {
-        var c: Compiler = .{ .fun_t = fun_t, .function = object.newFunction() };
+        var c: Compiler = .{ .enclosing = current, .fun_t = fun_t, .function = object.newFunction() };
+        if (fun_t != .type_script) {
+            c.function.name = object.copyString(p.previous.start, p.previous.length).asString();
+        }
         c.locals[c.local_count].depth = 0;
         c.locals[c.local_count].name.start = "";
         c.locals[c.local_count].name.length = 0;
@@ -68,7 +72,7 @@ const FunctionType = enum { type_function, type_script };
 
 const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     comptime var tmp: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = .{.{ .prefix = null, .infix = null, .precedence = .prec_none }} ** (@enumToInt(TokenType.lox_eof) + 1);
-    tmp[@enumToInt(TokenType.left_paren)] = .{ .prefix = grouping, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.left_paren)] = .{ .prefix = grouping, .infix = call, .precedence = .prec_call };
     tmp[@enumToInt(TokenType.minus)] = .{ .prefix = unary, .infix = binary, .precedence = .prec_term };
     tmp[@enumToInt(TokenType.bang)] = .{ .prefix = unary, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.bang_equal)] = .{ .prefix = null, .infix = binary, .precedence = .prec_equality };
@@ -110,8 +114,8 @@ pub fn compile(source: [:0]const u8) ?*ObjFunction {
     current = &compiler;
     advance();
     while (!match(.lox_eof)) declaration();
-    const function = endCompiler();
-    return if (p.had_error) null else function;
+    const fun = endCompiler();
+    return if (p.had_error) null else fun;
 }
 
 fn synchronize() void {
@@ -136,6 +140,31 @@ fn block() void {
     consume(.right_brace, "Expect '}' after block.");
 }
 
+fn function(t: FunctionType) void {
+    var c = Compiler.init(t);
+    current = &c;
+    beginScope();
+
+    consume(.left_paren, "Expect '(' after functions name.");
+    if (!check(.right_paren)) {
+        while (true) {
+            current.function.arity += 1;
+            if (current.function.arity > 255) {
+                errorAtCurrent("Can't have more than 255 parameters.");
+            }
+            const constant = parseVariable("Expect parameter name.");
+            defineVariable(constant);
+            if (!match(.comma)) break;
+        }
+    }
+    consume(.right_paren, "Expect ')' after parameters.");
+    consume(.left_brace, "Expect '{' before function body.");
+    block();
+
+    const fun = endCompiler();
+    emitBytes(&.{ @enumToInt(OpCode.op_constant), makeConstant(Value.Object(@ptrCast(*object.Obj, fun))) });
+}
+
 fn beginScope() void {
     current.scope_depth += 1;
 }
@@ -157,6 +186,13 @@ fn varDeclaration() void {
     defineVariable(global);
 }
 
+fn funDeclaration() void {
+    const global = parseVariable("Expect function name");
+    markInitialized();
+    function(.type_function);
+    defineVariable(global);
+}
+
 fn defineVariable(global: u8) void {
     if (current.scope_depth > 0) {
         markInitialized();
@@ -166,6 +202,7 @@ fn defineVariable(global: u8) void {
 }
 
 fn markInitialized() void {
+    if (current.scope_depth == 0) return;
     current.locals[current.local_count - 1].depth = @intCast(isize, current.scope_depth);
 }
 
@@ -298,17 +335,38 @@ fn forStatement() void {
 }
 
 fn declaration() void {
-    if (match(.lox_var)) varDeclaration() else statement();
+    if (match(.lox_fun)) funDeclaration() else if (match(.lox_var)) varDeclaration() else statement();
 
     if (p.panic_mode) synchronize();
 }
 
 fn statement() void {
-    if (match(.lox_print)) printStatement() else if (match(.lox_for)) forStatement() else if (match(.lox_if)) ifStatement() else if (match(.lox_while)) whileStatement() else if (match(.left_brace)) {
+    if (match(.lox_print)) {
+        printStatement();
+    } else if (match(.lox_for)) {
+        forStatement();
+    } else if (match(.lox_if)) {
+        ifStatement();
+    } else if (match(.lox_return)) {
+        returnStatement();
+    } else if (match(.lox_while)) {
+        whileStatement();
+    } else if (match(.left_brace)) {
         beginScope();
         block();
         endScope();
-    } else expressionStatement();
+    } else {
+        expressionStatement();
+    }
+}
+
+fn returnStatement() void {
+    if (current.fun_t == .type_script) errorAtPrevious("Can't return from top-level code.");
+    if (match(.semicolon)) emitReturn() else {
+        expression();
+        consume(.semicolon, "Expect ';' after return value.");
+        emitByte(@enumToInt(OpCode.op_return));
+    }
 }
 
 fn number(_: bool) void {
@@ -350,6 +408,27 @@ fn namedVariable(name: *Token, can_assign: bool) void {
 fn grouping(_: bool) void {
     expression();
     consume(.right_paren, "Expect ')' after expression.");
+}
+
+fn call(_: bool) void {
+    const arg_count = argumentList();
+    emitBytes(&.{ @enumToInt(OpCode.op_call), arg_count });
+}
+
+fn argumentList() u8 {
+    var arg_count: u8 = 0;
+    if (!check(.right_paren)) {
+        while (true) {
+            expression();
+            if (arg_count == 255) {
+                errorAtPrevious("Can't have more than 255 arguments.");
+            }
+            arg_count += 1;
+            if (!match(.comma)) break;
+        }
+    }
+    consume(.right_paren, "Expect ')' after arguments.");
+    return arg_count;
 }
 
 fn unary(_: bool) void {
@@ -519,6 +598,7 @@ fn patchJump(offset: u32) void {
 }
 
 fn emitReturn() void {
+    emitByte(@enumToInt(OpCode.op_nil));
     emitByte(@enumToInt(OpCode.op_return));
 }
 
@@ -528,13 +608,14 @@ fn emitConstant(value: Value) void {
 
 fn endCompiler() *ObjFunction {
     emitReturn();
-    const function = current.function;
+    const fun = current.function;
     if (comptime common.dump_enabled) {
         if (!p.had_error) {
-            debug.disassembleChunk(currentChunk(), if (function.name) |name| name.chars[0..name.length] else "<script>");
+            debug.disassembleChunk(currentChunk(), if (fun.name) |name| name.chars[0..name.length] else "<script>");
         }
     }
-    return function;
+    current = current.enclosing;
+    return fun;
 }
 
 fn errorAtCurrent(message: []const u8) void {

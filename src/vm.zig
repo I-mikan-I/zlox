@@ -54,11 +54,7 @@ pub const VM = struct {
         var function = compiler.compile(source) orelse return .interpret_compile_error;
 
         self.push(Value.Object(@ptrCast(*Obj, function)));
-        const frame = &self.frames[self.frame_count];
-        self.frame_count += 1;
-        frame.function = function;
-        frame.ip = function.chunk().code;
-        frame.slots = self.stack;
+        _ = self.call(function, 0);
 
         return self.run();
     }
@@ -82,7 +78,23 @@ pub const VM = struct {
             const inst = @intToEnum(chunk.OpCode, self.readByte());
             switch (inst) {
                 .op_return => {
-                    return .interpret_ok;
+                    const result = self.pop();
+                    self.frame_count -= 1;
+                    if (self.frame_count == 0) {
+                        _ = self.pop();
+                        return .interpret_ok;
+                    }
+
+                    self.stack_top = self.frame.slots;
+                    self.push(result);
+                    self.frame = &self.frames[self.frame_count - 1];
+                },
+                .op_call => {
+                    const arg_count = self.readByte();
+                    if (!self.callValue(self.peek(arg_count), arg_count)) {
+                        return .interpret_runtime_error;
+                    }
+                    self.frame = &self.frames[self.frame_count - 1];
                 },
                 .op_jump => {
                     const offset = self.readShort();
@@ -174,6 +186,34 @@ pub const VM = struct {
         }
     }
 
+    fn callValue(self: *VM, callee: Value, arg_count: usize) bool {
+        if (callee.isObject()) {
+            switch (callee.as.obj.t) {
+                .obj_function => return self.call(callee.as.obj.asFunction(), arg_count),
+                else => {},
+            }
+        }
+        self.runtimeError("Can only call functions and classes.", .{});
+        return false;
+    }
+
+    fn call(self: *VM, callee: *ObjFunction, arg_count: usize) bool {
+        if (arg_count != callee.arity) {
+            self.runtimeError("Expected {d} arguments but got {d}.", .{ callee.arity, arg_count });
+            return false;
+        }
+        if (self.frame_count == frames_max) {
+            self.runtimeError("Stack overflow.", .{});
+            return false;
+        }
+        var frame = &self.frames[self.frame_count];
+        self.frame_count += 1;
+        frame.function = callee;
+        frame.ip = callee.chunk().code;
+        frame.slots = self.stack_top - arg_count - 1;
+        return true;
+    }
+
     fn resetStack(self: *VM) void {
         self.stack_top = self.stack;
     }
@@ -181,11 +221,18 @@ pub const VM = struct {
     fn runtimeError(self: *VM, comptime format: []const u8, args: anytype) void {
         stderr.print(format, args) catch unreachable;
         stderr.writeByte('\n') catch unreachable;
-
-        const frame = &self.frames[self.frame_count - 1];
-        const instruction = @ptrToInt(frame.ip) - @ptrToInt(frame.function.chunk().code) - 1;
-        const line = frame.function.chunk().lines[instruction];
-        stderr.print("[line {d}] in script\n", .{line}) catch unreachable;
+        var index: isize = @intCast(isize, self.frame_count) - 1;
+        while (index >= 0) : (index -= 1) {
+            const frame = &self.frames[@intCast(usize, index)];
+            const function = frame.function;
+            const instruction = @ptrToInt(frame.ip) - @ptrToInt(function.chunk().code) - 1;
+            stderr.print("[line {d}] in ", .{function.chunk().lines[instruction]}) catch unreachable;
+            if (function.name) |name| {
+                stderr.print("{s}()\n", .{name.chars[0..name.length]}) catch unreachable;
+            } else {
+                stderr.print("script\n", .{}) catch unreachable;
+            }
+        }
         self.resetStack();
     }
 
@@ -201,7 +248,7 @@ pub const VM = struct {
         return self.stack_top[0];
     }
 
-    fn peek(self: *VM, comptime distance: comptime_int) Value {
+    fn peek(self: *VM, distance: usize) Value {
         return (self.stack_top - 1 - distance)[0];
     }
 
