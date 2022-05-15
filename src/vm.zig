@@ -11,9 +11,16 @@ const Chunk = chunk.Chunk;
 const Value = value.Value;
 const Obj = object.Obj;
 const ObjFunction = object.ObjFunction;
+const ObjNative = object.ObjNative;
 
 var stdout = common.stdout;
 var stderr = common.stderr;
+
+fn clockNative(_: usize, _: [*]Value) Value {
+    var ts = std.os.timespec{ .tv_sec = 0, .tv_nsec = 0 };
+    std.os.clock_gettime(std.os.CLOCK.MONOTONIC, &ts) catch std.os.exit(1);
+    return Value.Number(@intToFloat(f64, ts.tv_sec) + @intToFloat(f64, ts.tv_nsec) / 1_000_000_000.0);
+}
 
 const CallFrame = struct {
     function: *ObjFunction,
@@ -40,6 +47,7 @@ pub const VM = struct {
         vm.stack = alloc.create([stack_max]Value) catch std.os.exit(1);
         vm.resetStack();
         strings = Table.initTable();
+        vm.defineNative("clock", clockNative);
         return vm;
     }
 
@@ -190,6 +198,13 @@ pub const VM = struct {
         if (callee.isObject()) {
             switch (callee.as.obj.t) {
                 .obj_function => return self.call(callee.as.obj.asFunction(), arg_count),
+                .obj_native => {
+                    const native = callee.as.obj.asNative().function().*;
+                    const result = native(arg_count, self.stack_top - arg_count);
+                    self.stack_top -= arg_count + 1;
+                    self.push(result);
+                    return true;
+                },
                 else => {},
             }
         }
@@ -234,6 +249,14 @@ pub const VM = struct {
             }
         }
         self.resetStack();
+    }
+
+    fn defineNative(self: *VM, name: []const u8, function: object.NativeFn) void {
+        self.push(Value.Object(object.copyString(name.ptr, name.len)));
+        self.push(Value.Object(object.newNative(function)));
+        _ = self.globals.tableSet(self.stack[0].as.obj.asString(), self.stack[1]);
+        _ = self.pop();
+        _ = self.pop();
     }
 
     fn push(self: *VM, val: Value) void {

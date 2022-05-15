@@ -58,7 +58,7 @@ fn runFile(path: []const u8) void {
 }
 
 fn readFile(path: []const u8) [:0]const u8 {
-    var file = std.fs.openFileAbsolute(path, .{}) catch {
+    var file = std.fs.cwd().openFile(path, .{}) catch {
         std.log.err("Could not open file {s}.\n", .{path});
         std.os.exit(74);
     };

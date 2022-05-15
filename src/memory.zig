@@ -4,6 +4,7 @@ const object = @import("./object.zig");
 const Obj = object.Obj;
 const ObjString = object.ObjString;
 const ObjFunction = object.ObjFunction;
+const ObjNative = object.ObjNative;
 
 pub fn growArray(comptime t: type, ptr: [*]t, old_cap: u32, new_cap: u32, alloc: std.mem.Allocator) [*]t {
     return reallocate(ptr, old_cap, new_cap, alloc) orelse ptr;
@@ -58,9 +59,12 @@ fn freeObject(o: *Obj, alloc: std.mem.Allocator) void {
             free(ObjString, str, alloc);
         },
         .obj_function => {
-            const function = @ptrCast(*ObjFunction, @alignCast(@alignOf(ObjFunction), o));
+            const function = o.asFunction();
             function.chunk().freeChunk();
             free(ObjFunction, function, alloc);
+        },
+        .obj_native => {
+            free(ObjNative, o.asNative(), alloc);
         },
     }
 }

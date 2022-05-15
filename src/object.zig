@@ -6,7 +6,7 @@ const Value = @import("./value.zig").Value;
 const Chunk = @import("./chunk.zig").Chunk;
 const alloc = common.alloc;
 
-pub const ObjType = enum(u8) { obj_string, obj_function };
+pub const ObjType = enum(u8) { obj_string, obj_function, obj_native };
 
 pub const Obj = extern struct {
     const Self = @This();
@@ -21,6 +21,10 @@ pub const Obj = extern struct {
         return @ptrCast(*ObjFunction, @alignCast(@alignOf(ObjFunction), self));
     }
 
+    pub fn asNative(self: *Self) *ObjNative {
+        return @ptrCast(*ObjNative, @alignCast(@alignOf(ObjNative), self));
+    }
+
     pub fn print(self: *Self, writer: anytype) void {
         switch (self.t) {
             .obj_string => {
@@ -28,6 +32,9 @@ pub const Obj = extern struct {
             },
             .obj_function => {
                 printFunction(self.asFunction(), writer);
+            },
+            .obj_native => {
+                writer.print("<native fn>", .{}) catch unreachable;
             },
         }
     }
@@ -40,6 +47,17 @@ pub const ObjFunction = extern struct {
     name: ?*ObjString,
     pub inline fn chunk(self: *ObjFunction) *Chunk {
         return @ptrCast(*Chunk, &self._chunk);
+    }
+};
+
+pub const NativeFn = fn (arg_count: usize, args: [*]Value) Value;
+
+pub const ObjNative = extern struct {
+    obj: Obj,
+    _function: [@sizeOf(NativeFn)]u8 align(@alignOf(NativeFn)) = undefined,
+
+    pub fn function(self: *ObjNative) *NativeFn {
+        return @ptrCast(*NativeFn, &self._function);
     }
 };
 
@@ -56,6 +74,12 @@ pub fn newFunction() *ObjFunction {
     function.name = null;
     function.chunk().* = Chunk.init(alloc);
     return function;
+}
+
+pub fn newNative(function: NativeFn) *Obj {
+    var native = allocateObject(ObjNative, .obj_native);
+    native.function().* = function;
+    return @ptrCast(*Obj, native);
 }
 
 pub fn copyString(chars: [*]const u8, length: usize) *Obj {
