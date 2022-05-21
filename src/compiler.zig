@@ -57,6 +57,7 @@ const Compiler = struct {
             c.function.name = object.copyString(p.previous.start, p.previous.length).asString();
         }
         c.locals[c.local_count].depth = 0;
+        c.locals[c.local_count].is_captured = false;
         c.locals[c.local_count].name.start = "";
         c.locals[c.local_count].name.length = 0;
         c.local_count += 1;
@@ -67,6 +68,7 @@ const Compiler = struct {
 const Local = struct {
     name: Token,
     depth: isize,
+    is_captured: bool,
 };
 
 const Upvalue = struct {
@@ -184,7 +186,11 @@ fn beginScope() void {
 fn endScope() void {
     current.scope_depth -= 1;
     while (current.local_count > 0 and current.locals[@intCast(usize, current.local_count - 1)].depth > current.scope_depth) {
-        emitByte(@enumToInt(OpCode.op_pop));
+        if (current.locals[current.local_count - 1].is_captured) {
+            emitByte(@enumToInt(OpCode.op_close_upvalue));
+        } else {
+            emitByte(@enumToInt(OpCode.op_pop));
+        }
         current.local_count -= 1;
     }
 }
@@ -241,6 +247,7 @@ fn addLocal(name: Token) void {
     const local = &current.locals[current.local_count];
     local.name = name;
     local.depth = -1;
+    local.is_captured = false;
 }
 
 fn expressionStatement() void {
@@ -343,7 +350,6 @@ fn forStatement() void {
         patchJump(ej);
         emitByte(@enumToInt(OpCode.op_pop));
     }
-    //endScope()
 }
 
 fn declaration() void {
@@ -545,6 +551,7 @@ fn resolveUpvalue(compiler: *Compiler, name: *Token) ?u8 {
     const enc = compiler.enclosing orelse return null;
     const local = resolveLocal(enc, name);
     if (local) |index| {
+        enc.locals[index].is_captured = true;
         return addUpvalue(compiler, index, true);
     }
 

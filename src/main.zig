@@ -172,3 +172,25 @@ test "closure_outer" {
     ), vm.InterpretResult.interpret_ok);
     try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }
+
+test "closure_reference" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "updated\n";
+    try std.testing.expectEqual(v.interpret(
+        \\var globalSet;
+        \\var globalGet;
+        \\fun main() {
+        \\    var a = "initial";
+        \\    fun set() { a = "updated"; }
+        \\    fun get() { print a; }
+        \\    globalSet = set;
+        \\    globalGet = get;
+        \\}
+        \\main();
+        \\globalSet();
+        \\globalGet();
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}

@@ -36,6 +36,7 @@ pub const VM = struct {
     pub var objects: ?*object.Obj = null; // linked list of allocated objects
     pub var strings: Table = undefined;
     frames: [frames_max]CallFrame = undefined,
+    open_upvalues: ?*ObjUpvalue = null,
     frame_count: usize = 0,
     frame: *CallFrame = undefined,
     globals: Table = Table.initTable(),
@@ -91,6 +92,7 @@ pub const VM = struct {
             switch (inst) {
                 .op_return => {
                     const result = self.pop();
+                    self.closeUpvalues(&self.frame.slots[0]);
                     self.frame_count -= 1;
                     if (self.frame_count == 0) {
                         _ = self.pop();
@@ -110,11 +112,15 @@ pub const VM = struct {
                         const is_local = self.readByte();
                         const index = self.readByte();
                         if (is_local == 1) {
-                            closure.upvalues[i] = captureUpvalue(&(self.frame.slots + index)[0]);
+                            closure.upvalues[i] = self.captureUpvalue(&(self.frame.slots + index)[0]);
                         } else {
                             closure.upvalues[i] = self.frame.closure.upvalues[index];
                         }
                     }
+                },
+                .op_close_upvalue => {
+                    self.closeUpvalues(&(self.stack_top - 1)[0]);
+                    _ = self.pop();
                 },
                 .op_call => {
                     const arg_count = self.readByte();
@@ -241,9 +247,33 @@ pub const VM = struct {
         return false;
     }
 
-    fn captureUpvalue(local: *Value) *ObjUpvalue {
+    fn captureUpvalue(self: *VM, local: *Value) *ObjUpvalue {
+        var prev_upvalue: ?*ObjUpvalue = null;
+        var upvalue = self.open_upvalues;
+        while (upvalue != null and @ptrToInt(upvalue.?.location) > @ptrToInt(local)) {
+            prev_upvalue = upvalue;
+            upvalue = upvalue.?.next;
+        }
+        if (upvalue != null and upvalue.?.location == local) {
+            return upvalue.?;
+        }
         const created_upvalue = object.newUpvalue(local);
+        created_upvalue.next = upvalue;
+        if (prev_upvalue) |prev| {
+            prev.next = created_upvalue;
+        } else {
+            self.open_upvalues = created_upvalue;
+        }
         return created_upvalue;
+    }
+
+    fn closeUpvalues(self: *VM, last: *Value) void {
+        while (self.open_upvalues != null and @ptrToInt(self.open_upvalues.?.location) >= @ptrToInt(last)) {
+            const upvalue = self.open_upvalues.?;
+            upvalue.closed().* = upvalue.location.*;
+            upvalue.location = upvalue.closed();
+            self.open_upvalues = self.open_upvalues.?.next;
+        }
     }
 
     fn call(self: *VM, callee: *ObjClosure, arg_count: usize) bool {

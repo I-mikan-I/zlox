@@ -78,7 +78,7 @@ pub const ObjNative = extern struct {
     obj: Obj,
     _function: [@sizeOf(NativeFn)]u8 align(@alignOf(NativeFn)) = undefined,
 
-    pub fn function(self: *ObjNative) *NativeFn {
+    pub inline fn function(self: *ObjNative) *NativeFn {
         return @ptrCast(*NativeFn, &self._function);
     }
 };
@@ -93,6 +93,12 @@ pub const ObjString = extern struct {
 pub const ObjUpvalue = extern struct {
     obj: Obj,
     location: *Value,
+    next: ?*ObjUpvalue,
+    _closed: [@sizeOf(Value)]u8 align(@alignOf(Value)),
+
+    pub inline fn closed(self: *ObjUpvalue) *Value {
+        return @ptrCast(*Value, &self._closed);
+    }
 };
 
 pub fn newClosure(function: *ObjFunction) *ObjClosure {
@@ -125,6 +131,8 @@ pub fn newNative(function: NativeFn) *Obj {
 pub fn newUpvalue(slot: *Value) *ObjUpvalue {
     var upvalue = allocateObject(ObjUpvalue, .obj_upvalue);
     upvalue.location = slot;
+    upvalue.next = null;
+    upvalue.closed().* = Value.Nil();
     return upvalue;
 }
 
