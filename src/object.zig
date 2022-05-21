@@ -6,7 +6,7 @@ const Value = @import("./value.zig").Value;
 const Chunk = @import("./chunk.zig").Chunk;
 const alloc = common.alloc;
 
-pub const ObjType = enum(u8) { obj_string, obj_function, obj_native };
+pub const ObjType = enum(u8) { obj_string, obj_function, obj_native, obj_closure, obj_upvalue };
 
 pub const Obj = extern struct {
     const Self = @This();
@@ -25,6 +25,14 @@ pub const Obj = extern struct {
         return @ptrCast(*ObjNative, @alignCast(@alignOf(ObjNative), self));
     }
 
+    pub fn asClosure(self: *Self) *ObjClosure {
+        return @ptrCast(*ObjClosure, @alignCast(@alignOf(ObjClosure), self));
+    }
+
+    pub fn asUpvalue(self: *Self) *ObjUpvalue {
+        return @ptrCast(*ObjUpvalue, @alignCast(@alignOf(ObjUpvalue), self));
+    }
+
     pub fn print(self: *Self, writer: anytype) void {
         switch (self.t) {
             .obj_string => {
@@ -36,6 +44,12 @@ pub const Obj = extern struct {
             .obj_native => {
                 writer.print("<native fn>", .{}) catch unreachable;
             },
+            .obj_closure => {
+                printFunction(self.asClosure().function, writer);
+            },
+            .obj_upvalue => {
+                writer.print("upvalue", .{}) catch unreachable;
+            },
         }
     }
 };
@@ -45,9 +59,17 @@ pub const ObjFunction = extern struct {
     arity: usize,
     _chunk: [@sizeOf(Chunk)]u8 align(@alignOf(Chunk)) = undefined,
     name: ?*ObjString,
+    upvalue_count: u8,
     pub inline fn chunk(self: *ObjFunction) *Chunk {
         return @ptrCast(*Chunk, &self._chunk);
     }
+};
+
+pub const ObjClosure = extern struct {
+    obj: Obj,
+    function: *ObjFunction,
+    upvalues: [*]?*ObjUpvalue,
+    upvalue_count: usize,
 };
 
 pub const NativeFn = fn (arg_count: usize, args: [*]Value) Value;
@@ -68,11 +90,29 @@ pub const ObjString = extern struct {
     hash: u32,
 };
 
+pub const ObjUpvalue = extern struct {
+    obj: Obj,
+    location: *Value,
+};
+
+pub fn newClosure(function: *ObjFunction) *ObjClosure {
+    const upvalues = memory.allocate(?*ObjUpvalue, function.upvalue_count, alloc);
+    for (upvalues[0..function.upvalue_count]) |*upvalue| {
+        upvalue.* = null;
+    }
+    var closure = allocateObject(ObjClosure, .obj_closure);
+    closure.upvalues = upvalues;
+    closure.upvalue_count = function.upvalue_count;
+    closure.function = function;
+    return closure;
+}
+
 pub fn newFunction() *ObjFunction {
     var function = allocateObject(ObjFunction, .obj_function);
     function.arity = 0;
     function.name = null;
     function.chunk().* = Chunk.init(alloc);
+    function.upvalue_count = 0;
     return function;
 }
 
@@ -80,6 +120,12 @@ pub fn newNative(function: NativeFn) *Obj {
     var native = allocateObject(ObjNative, .obj_native);
     native.function().* = function;
     return @ptrCast(*Obj, native);
+}
+
+pub fn newUpvalue(slot: *Value) *ObjUpvalue {
+    var upvalue = allocateObject(ObjUpvalue, .obj_upvalue);
+    upvalue.location = slot;
+    return upvalue;
 }
 
 pub fn copyString(chars: [*]const u8, length: usize) *Obj {

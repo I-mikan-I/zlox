@@ -47,6 +47,26 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         .op_jump_if_false => jumpInstruction("OP_JUMP_IF_FALSE", 1, c, offset),
         .op_loop => jumpInstruction("OP_LOOP", -1, c, offset),
         .op_call => byteInstruction("OP_CALL", c, offset),
+        .op_get_upvalue => byteInstruction("OP_GET_UPVALUE", c, offset),
+        .op_set_upvalue => byteInstruction("OP_SET_UPVALUE", c, offset),
+        .op_closure => blk: {
+            offset += 1;
+            const con = c.code[offset];
+            offset += 1;
+            stdout.print("{s:<16} {d:4} ", .{ "OP_CLOSURE", con }) catch unreachable;
+            value.printValue(c.constants.values[con], stdout);
+            stdout.print("\n", .{}) catch unreachable;
+            const function = c.constants.values[con].as.obj.asFunction();
+            var i: usize = 0;
+            while (i < function.upvalue_count) : (i += 1) {
+                const is_local = c.code[offset];
+                offset += 1;
+                const index = c.code[offset];
+                offset += 1;
+                stdout.print("{d:4}      |                     {s} {d}\n", .{ offset - 2, if (is_local == 1) "local" else "upvalue", index }) catch unreachable;
+            }
+            break :blk offset;
+        },
         // else => blk: {
         //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
         //     break :blk offset + 1;

@@ -5,6 +5,8 @@ const Obj = object.Obj;
 const ObjString = object.ObjString;
 const ObjFunction = object.ObjFunction;
 const ObjNative = object.ObjNative;
+const ObjClosure = object.ObjClosure;
+const ObjUpvalue = object.ObjUpvalue;
 
 pub fn growArray(comptime t: type, ptr: [*]t, old_cap: u32, new_cap: u32, alloc: std.mem.Allocator) [*]t {
     return reallocate(ptr, old_cap, new_cap, alloc) orelse ptr;
@@ -21,7 +23,7 @@ fn free(comptime t: type, ptr: *t, alloc: std.mem.Allocator) void {
 }
 
 pub fn allocate(comptime t: type, count: usize, alloc: std.mem.Allocator) [*]t {
-    if (count < 1) unreachable;
+    if (count < 1) return undefined;
     var tmp: [*]t = undefined;
     return reallocate(tmp, 0, count, alloc).?;
 }
@@ -65,6 +67,14 @@ fn freeObject(o: *Obj, alloc: std.mem.Allocator) void {
         },
         .obj_native => {
             free(ObjNative, o.asNative(), alloc);
+        },
+        .obj_closure => {
+            const closure = o.asClosure();
+            freeArray(?*ObjUpvalue, closure.upvalues, closure.upvalue_count, alloc);
+            free(ObjClosure, o.asClosure(), alloc);
+        },
+        .obj_upvalue => {
+            free(ObjUpvalue, o.asUpvalue(), alloc);
         },
     }
 }

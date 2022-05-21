@@ -154,3 +154,21 @@ test "functions" {
     ), vm.InterpretResult.interpret_ok);
     try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }
+
+test "closure_outer" {
+    v = vm.VM.initVM(std.testing.allocator);
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "outside\n";
+    try std.testing.expectEqual(v.interpret(
+        \\fun outer() {
+        \\var x = "outside";
+        \\fun inner() {
+        \\print x;
+        \\}
+        \\inner();
+        \\}
+        \\outer();
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}

@@ -43,12 +43,13 @@ const ParseRule = struct {
 };
 
 const Compiler = struct {
-    enclosing: *Compiler,
+    enclosing: ?*Compiler,
     function: *ObjFunction,
     fun_t: FunctionType,
     locals: [256]Local = undefined,
     local_count: u8 = 0,
     scope_depth: usize = 0,
+    upvalues: [256]Upvalue = undefined,
 
     fn init(fun_t: FunctionType) Compiler {
         var c: Compiler = .{ .enclosing = current, .fun_t = fun_t, .function = object.newFunction() };
@@ -66,6 +67,11 @@ const Compiler = struct {
 const Local = struct {
     name: Token,
     depth: isize,
+};
+
+const Upvalue = struct {
+    index: u8,
+    is_local: bool,
 };
 
 const FunctionType = enum { type_function, type_script };
@@ -112,6 +118,7 @@ pub fn compile(source: [:0]const u8) ?*ObjFunction {
     s = scanner.Scanner.init(source);
     var compiler = Compiler.init(.type_script);
     current = &compiler;
+    current.enclosing = null;
     advance();
     while (!match(.lox_eof)) declaration();
     const fun = endCompiler();
@@ -162,7 +169,12 @@ fn function(t: FunctionType) void {
     block();
 
     const fun = endCompiler();
-    emitBytes(&.{ @enumToInt(OpCode.op_constant), makeConstant(Value.Object(@ptrCast(*object.Obj, fun))) });
+    emitBytes(&.{ @enumToInt(OpCode.op_closure), makeConstant(Value.Object(@ptrCast(*object.Obj, fun))) });
+
+    for (c.upvalues[0..fun.upvalue_count]) |upvalue| {
+        emitByte(if (upvalue.is_local) 1 else 0);
+        emitByte(upvalue.index);
+    }
 }
 
 fn beginScope() void {
@@ -393,9 +405,15 @@ fn namedVariable(name: *Token, can_assign: bool) void {
         getOp = @enumToInt(OpCode.op_get_local);
         setOp = @enumToInt(OpCode.op_set_local);
     } else {
-        arg = identifierConstant(name);
-        getOp = @enumToInt(OpCode.op_get_global);
-        setOp = @enumToInt(OpCode.op_set_global);
+        arg = resolveUpvalue(current, name);
+        if (arg) |_| {
+            getOp = @enumToInt(OpCode.op_get_upvalue);
+            setOp = @enumToInt(OpCode.op_set_upvalue);
+        } else {
+            arg = identifierConstant(name);
+            getOp = @enumToInt(OpCode.op_get_global);
+            setOp = @enumToInt(OpCode.op_set_global);
+        }
     }
     if (can_assign and match(.equal)) {
         expression();
@@ -523,6 +541,38 @@ fn resolveLocal(compiler: *Compiler, name: *Token) ?u8 {
     return null;
 }
 
+fn resolveUpvalue(compiler: *Compiler, name: *Token) ?u8 {
+    const enc = compiler.enclosing orelse return null;
+    const local = resolveLocal(enc, name);
+    if (local) |index| {
+        return addUpvalue(compiler, index, true);
+    }
+
+    const upvalue = resolveUpvalue(enc, name);
+    if (upvalue) |index| {
+        return addUpvalue(compiler, index, false);
+    }
+    return null;
+}
+
+fn addUpvalue(compiler: *Compiler, index: u8, is_local: bool) u8 {
+    const upvalue_count = compiler.function.upvalue_count;
+
+    for (compiler.upvalues[0..upvalue_count]) |*upvalue, i| {
+        if (upvalue.index == index and upvalue.is_local == is_local) return @intCast(u8, i);
+    }
+
+    if (upvalue_count == 256) {
+        errorAtPrevious("Too many closure variables in function.");
+        return 0;
+    }
+
+    compiler.upvalues[upvalue_count].is_local = is_local;
+    compiler.upvalues[upvalue_count].index = index;
+    compiler.function.upvalue_count += 1;
+    return upvalue_count;
+}
+
 fn advance() void {
     p.previous = p.current;
 
@@ -614,7 +664,7 @@ fn endCompiler() *ObjFunction {
             debug.disassembleChunk(currentChunk(), if (fun.name) |name| name.chars[0..name.length] else "<script>");
         }
     }
-    current = current.enclosing;
+    current = current.enclosing orelse undefined;
     return fun;
 }
 

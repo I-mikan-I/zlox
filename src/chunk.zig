@@ -12,9 +12,11 @@ pub const OpCode = enum(u8) {
     op_pop,
     op_get_local,
     op_get_global,
+    op_get_upvalue,
     op_define_global,
     op_set_local,
     op_set_global,
+    op_set_upvalue,
     op_equal,
     op_greater,
     op_less,
@@ -29,6 +31,7 @@ pub const OpCode = enum(u8) {
     op_jump_if_false,
     op_loop,
     op_call,
+    op_closure,
     op_return,
 };
 
