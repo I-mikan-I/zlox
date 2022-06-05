@@ -1,5 +1,6 @@
 const std = @import("std");
 const scanner = @import("./scanner.zig");
+const memory = @import("./memory.zig");
 const common = @import("./common.zig");
 const debug = @import("./debug.zig");
 const object = @import("./object.zig");
@@ -9,6 +10,7 @@ const OpCode = @import("./chunk.zig").OpCode;
 const TokenType = scanner.TokenType;
 const Token = scanner.Token;
 const ObjFunction = object.ObjFunction;
+const Obj = object.Obj;
 
 const stdout = common.stdout;
 const stderr = common.stderr;
@@ -51,17 +53,18 @@ const Compiler = struct {
     scope_depth: usize = 0,
     upvalues: [256]Upvalue = undefined,
 
-    fn init(fun_t: FunctionType) Compiler {
+    fn init(self: *Compiler, fun_t: FunctionType) void {
         var c: Compiler = .{ .enclosing = current, .fun_t = fun_t, .function = object.newFunction() };
+        self.* = c;
+        current = self;
         if (fun_t != .type_script) {
             c.function.name = object.copyString(p.previous.start, p.previous.length).asString();
         }
-        c.locals[c.local_count].depth = 0;
-        c.locals[c.local_count].is_captured = false;
-        c.locals[c.local_count].name.start = "";
-        c.locals[c.local_count].name.length = 0;
-        c.local_count += 1;
-        return c;
+        self.locals[self.local_count].depth = 0;
+        self.locals[self.local_count].is_captured = false;
+        self.locals[self.local_count].name.start = "";
+        self.locals[self.local_count].name.length = 0;
+        self.local_count += 1;
     }
 };
 
@@ -104,7 +107,7 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
 };
 
 var p: Parser = undefined;
-var current: *Compiler = undefined;
+var current: ?*Compiler = null;
 var s: scanner.Scanner = undefined;
 
 fn getRule(t: TokenType) *const ParseRule {
@@ -112,19 +115,25 @@ fn getRule(t: TokenType) *const ParseRule {
 }
 
 fn currentChunk() *Chunk {
-    return current.function.chunk();
+    return current.?.function.chunk();
 }
 
 pub fn compile(source: [:0]const u8) ?*ObjFunction {
     p = Parser{};
     s = scanner.Scanner.init(source);
-    var compiler = Compiler.init(.type_script);
-    current = &compiler;
-    current.enclosing = null;
+    var compiler: Compiler = undefined;
+    Compiler.init(&compiler, .type_script);
     advance();
     while (!match(.lox_eof)) declaration();
     const fun = endCompiler();
     return if (p.had_error) null else fun;
+}
+
+pub fn markCompilerRoots() void {
+    var compiler: ?*Compiler = current;
+    while (compiler) |comp| : (compiler = comp.enclosing) {
+        memory.markObject(@ptrCast(*Obj, comp.function));
+    }
 }
 
 fn synchronize() void {
@@ -150,15 +159,15 @@ fn block() void {
 }
 
 fn function(t: FunctionType) void {
-    var c = Compiler.init(t);
-    current = &c;
+    var c: Compiler = undefined;
+    Compiler.init(&c, t);
     beginScope();
 
     consume(.left_paren, "Expect '(' after functions name.");
     if (!check(.right_paren)) {
         while (true) {
-            current.function.arity += 1;
-            if (current.function.arity > 255) {
+            current.?.function.arity += 1;
+            if (current.?.function.arity > 255) {
                 errorAtCurrent("Can't have more than 255 parameters.");
             }
             const constant = parseVariable("Expect parameter name.");
@@ -180,18 +189,18 @@ fn function(t: FunctionType) void {
 }
 
 fn beginScope() void {
-    current.scope_depth += 1;
+    current.?.scope_depth += 1;
 }
 
 fn endScope() void {
-    current.scope_depth -= 1;
-    while (current.local_count > 0 and current.locals[@intCast(usize, current.local_count - 1)].depth > current.scope_depth) {
-        if (current.locals[current.local_count - 1].is_captured) {
+    current.?.scope_depth -= 1;
+    while (current.?.local_count > 0 and current.?.locals[@intCast(usize, current.?.local_count - 1)].depth > current.?.scope_depth) {
+        if (current.?.locals[current.?.local_count - 1].is_captured) {
             emitByte(@enumToInt(OpCode.op_close_upvalue));
         } else {
             emitByte(@enumToInt(OpCode.op_pop));
         }
-        current.local_count -= 1;
+        current.?.local_count -= 1;
     }
 }
 
@@ -212,7 +221,7 @@ fn funDeclaration() void {
 }
 
 fn defineVariable(global: u8) void {
-    if (current.scope_depth > 0) {
+    if (current.?.scope_depth > 0) {
         markInitialized();
         return;
     }
@@ -220,17 +229,17 @@ fn defineVariable(global: u8) void {
 }
 
 fn markInitialized() void {
-    if (current.scope_depth == 0) return;
-    current.locals[current.local_count - 1].depth = @intCast(isize, current.scope_depth);
+    if (current.?.scope_depth == 0) return;
+    current.?.locals[current.?.local_count - 1].depth = @intCast(isize, current.?.scope_depth);
 }
 
 fn declareVariable() void {
-    if (current.scope_depth == 0) return;
+    if (current.?.scope_depth == 0) return;
     const name = &p.previous;
-    var i: usize = current.local_count;
+    var i: usize = current.?.local_count;
     while (i >= 0) : (i -= 1) {
-        const local = &current.locals[i];
-        if (local.depth != -1 and local.depth < current.scope_depth) break;
+        const local = &current.?.locals[i];
+        if (local.depth != -1 and local.depth < current.?.scope_depth) break;
         if (identifiersEqual(name, &local.name)) {
             errorAtPrevious("Already a variable with this name in this scope.");
         }
@@ -239,12 +248,12 @@ fn declareVariable() void {
 }
 
 fn addLocal(name: Token) void {
-    defer current.local_count += 1;
-    if (current.local_count > 256) {
+    defer current.?.local_count += 1;
+    if (current.?.local_count > 256) {
         errorAtPrevious("Too many local variables in function.");
         return;
     }
-    const local = &current.locals[current.local_count];
+    const local = &current.?.locals[current.?.local_count];
     local.name = name;
     local.depth = -1;
     local.is_captured = false;
@@ -379,7 +388,7 @@ fn statement() void {
 }
 
 fn returnStatement() void {
-    if (current.fun_t == .type_script) errorAtPrevious("Can't return from top-level code.");
+    if (current.?.fun_t == .type_script) errorAtPrevious("Can't return from top-level code.");
     if (match(.semicolon)) emitReturn() else {
         expression();
         consume(.semicolon, "Expect ';' after return value.");
@@ -406,12 +415,12 @@ fn variable(can_assign: bool) void {
 fn namedVariable(name: *Token, can_assign: bool) void {
     var getOp: u8 = undefined;
     var setOp: u8 = undefined;
-    var arg = resolveLocal(current, name);
+    var arg = resolveLocal(current.?, name);
     if (arg) |_| {
         getOp = @enumToInt(OpCode.op_get_local);
         setOp = @enumToInt(OpCode.op_set_local);
     } else {
-        arg = resolveUpvalue(current, name);
+        arg = resolveUpvalue(current.?, name);
         if (arg) |_| {
             getOp = @enumToInt(OpCode.op_get_upvalue);
             setOp = @enumToInt(OpCode.op_set_upvalue);
@@ -520,7 +529,7 @@ fn parsePrecedence(precedence: Precedence) void {
 fn parseVariable(errorMessage: []const u8) u8 {
     consume(.identifier, errorMessage);
     declareVariable();
-    if (current.scope_depth > 0) return 0;
+    if (current.?.scope_depth > 0) return 0;
     return identifierConstant(&p.previous);
 }
 
@@ -665,13 +674,13 @@ fn emitConstant(value: Value) void {
 
 fn endCompiler() *ObjFunction {
     emitReturn();
-    const fun = current.function;
+    const fun = current.?.function;
     if (comptime common.dump_enabled) {
         if (!p.had_error) {
             debug.disassembleChunk(currentChunk(), if (fun.name) |name| name.chars[0..name.length] else "<script>");
         }
     }
-    current = current.enclosing orelse undefined;
+    current = current.?.enclosing;
     return fun;
 }
 

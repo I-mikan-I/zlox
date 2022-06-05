@@ -4,6 +4,8 @@ const builtin = @import("builtin");
 pub const alloc = if (builtin.mode == std.builtin.Mode.Debug) std.testing.allocator else std.heap.c_allocator;
 pub const trace_enabled = @import("build_options").trace_enable;
 pub const dump_enabled = @import("build_options").dump_code;
+pub const stress_gc = @import("build_options").stress_gc;
+pub const log_gc = @import("build_options").log_gc;
 pub const stdout = if (builtin.is_test) buffer_stream.writer() else std.io.getStdOut().writer();
 pub const stderr = std.io.getStdErr().writer();
 

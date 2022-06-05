@@ -55,8 +55,8 @@ pub const Chunk = struct {
         if (self.capacity <= self.count) {
             const old_c = self.capacity;
             self.capacity = common.growCapacity(old_c);
-            self.code = memory.growArray(u8, self.code, old_c, self.capacity, self.allocator);
-            self.lines = memory.growArray(u32, self.lines, old_c, self.capacity, self.allocator);
+            self.code = memory.growArray(u8, self.code, old_c, self.capacity);
+            self.lines = memory.growArray(u32, self.lines, old_c, self.capacity);
         }
         self.code[self.count] = byte;
         self.lines[self.count] = line;
@@ -69,8 +69,8 @@ pub const Chunk = struct {
     }
 
     pub fn freeChunk(self: *Chunk) void {
-        memory.freeArray(u8, self.code, self.capacity, self.allocator);
-        memory.freeArray(u32, self.lines, self.capacity, self.allocator);
+        memory.freeArray(u8, self.code, self.capacity);
+        memory.freeArray(u32, self.lines, self.capacity);
         self.count = 0;
         self.capacity = 0;
         self.code = undefined;

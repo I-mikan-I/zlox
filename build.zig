@@ -14,6 +14,8 @@ pub fn build(b: *std.build.Builder) void {
     var options = b.addOptions();
     options.addOption(bool, "trace_enable", b.option(bool, "enable-tracing", "enables Lox VM tracing.") orelse false);
     options.addOption(bool, "dump_code", b.option(bool, "enable-dump", "enables bytecode printing after compilation.") orelse false);
+    options.addOption(bool, "stress_gc", b.option(bool, "enable-gc-stress", "enables stressing the garbage collector.") orelse false);
+    options.addOption(bool, "log_gc", b.option(bool, "enable-log-gc", "enables logging gc operation.") orelse false);
     const exe = b.addExecutable("zlox", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);

@@ -95,14 +95,14 @@ pub const ValueArray = struct {
         if (self.capacity <= self.count) {
             const old_c = self.capacity;
             self.capacity = if (old_c < 8) 8 else old_c * 2;
-            self.values = memory.growArray(Value, self.values, old_c, self.capacity, self.allocator);
+            self.values = memory.growArray(Value, self.values, old_c, self.capacity);
         }
         self.values[self.count] = value;
         self.count += 1;
     }
 
     pub fn freeValueArray(self: *ValueArray) void {
-        memory.freeArray(Value, self.values, self.capacity, self.allocator);
+        memory.freeArray(Value, self.values, self.capacity);
         self.count = 0;
         self.capacity = 0;
         self.values = undefined;

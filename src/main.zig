@@ -7,10 +7,10 @@ const stdout = common.stdout;
 const stdin = std.io.getStdIn().reader();
 var alloc = @import("./common.zig").alloc;
 
-var v: vm.VM = undefined;
+var v: vm.VM = .{};
 
 pub fn main() anyerror!void {
-    v = vm.VM.initVM(alloc);
+    v.initVM();
     defer v.freeVM();
     var args = std.process.args();
     _ = args.skip();
@@ -78,19 +78,19 @@ fn readFile(path: []const u8) [:0]const u8 {
 }
 
 test "main-test" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     try std.testing.expectEqual(v.interpret("print -(3*8) == ---24;"), vm.InterpretResult.interpret_ok);
 }
 
 test "main-string" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     try std.testing.expectEqual(v.interpret("print \"hello!\";"), vm.InterpretResult.interpret_ok);
 }
 
 test "global var" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     try std.testing.expectEqual(v.interpret(
         \\var breakfast = "corn flakes";
@@ -100,7 +100,7 @@ test "global var" {
 }
 
 test "local var" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     common.buffer_stream.reset();
     const expected = "hello another world\n";
@@ -120,7 +120,7 @@ test "local var" {
 }
 
 test "loops" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     common.buffer_stream.reset();
     const expected = "1000\n";
@@ -135,7 +135,7 @@ test "loops" {
 }
 
 test "functions" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     common.buffer_stream.reset();
     const expected = "true\nfalse\ntrue\n";
@@ -156,7 +156,7 @@ test "functions" {
 }
 
 test "closure_outer" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     common.buffer_stream.reset();
     const expected = "outside\n";
@@ -174,7 +174,7 @@ test "closure_outer" {
 }
 
 test "closure_reference" {
-    v = vm.VM.initVM(std.testing.allocator);
+    v.initVM();
     defer v.freeVM();
     common.buffer_stream.reset();
     const expected = "updated\n";

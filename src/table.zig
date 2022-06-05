@@ -4,6 +4,7 @@ const common = @import("./common.zig");
 const Value = @import("./value.zig").Value;
 const object = @import("./object.zig");
 const ObjString = object.ObjString;
+const Obj = object.Obj;
 
 const alloc = @import("./common.zig").alloc;
 
@@ -20,7 +21,7 @@ pub const Table = struct {
     }
 
     pub fn freeTable(self: *Self) void {
-        memory.freeArray(Entry, self.entries, self.capacity, alloc);
+        memory.freeArray(Entry, self.entries, self.capacity);
         self.capacity = 0;
         self.count = 0;
     }
@@ -74,6 +75,23 @@ pub const Table = struct {
         }
     }
 
+    pub fn removeWhite(self: *Self) void {
+        for (self.entries[0..self.capacity]) |*entry| {
+            if (entry.key) |key| {
+                if (!key.obj.is_marked) {
+                    _ = self.tableDelete(key);
+                }
+            }
+        }
+    }
+
+    pub fn markTable(self: *Self) void {
+        for (self.entries[0..self.capacity]) |*entry| {
+            memory.markObject(@ptrCast(?*Obj, entry.key));
+            memory.markValue(&entry.value);
+        }
+    }
+
     fn tableAddAll(to: *Self, from: *Self) void {
         for (from.entries[0..from.capacity]) |entry| {
             if (entry.key != null) {
@@ -83,7 +101,7 @@ pub const Table = struct {
     }
 
     fn adjustCapacity(self: *Self, capacity: usize) void {
-        const entries = memory.allocate(Entry, capacity, alloc);
+        const entries = memory.allocate(Entry, capacity);
         for (entries[0..capacity]) |*entry| {
             entry.key = null;
             entry.value = Value.Nil();
@@ -97,7 +115,7 @@ pub const Table = struct {
             dest.value = entry.value;
             self.count += 1;
         }
-        memory.freeArray(Entry, self.entries, self.capacity, alloc);
+        memory.freeArray(Entry, self.entries, self.capacity);
 
         self.entries = entries;
         self.capacity = capacity;

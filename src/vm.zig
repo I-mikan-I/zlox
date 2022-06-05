@@ -15,6 +15,7 @@ const ObjClosure = object.ObjClosure;
 const ObjNative = object.ObjNative;
 const ObjUpvalue = object.ObjUpvalue;
 
+const alloc = common.alloc;
 var stdout = common.stdout;
 var stderr = common.stderr;
 
@@ -35,30 +36,38 @@ pub const VM = struct {
     const stack_max = frames_max * 256;
     pub var objects: ?*object.Obj = null; // linked list of allocated objects
     pub var strings: Table = undefined;
+    gray_count: usize = 0,
+    gray_stack: []*Obj = &.{},
     frames: [frames_max]CallFrame = undefined,
     open_upvalues: ?*ObjUpvalue = null,
     frame_count: usize = 0,
     frame: *CallFrame = undefined,
-    globals: Table = Table.initTable(),
+    globals: Table = undefined,
     stack: *[stack_max]Value = undefined,
-    alloc: std.mem.Allocator,
     chunk: *Chunk = undefined,
     stack_top: [*]Value = undefined,
 
-    pub fn initVM(alloc: std.mem.Allocator) VM {
-        var vm: VM = .{ .alloc = alloc };
+    pub fn initVM(self: *VM) void {
+        var vm = self;
+        memory.initGC(vm);
+        vm.globals = Table.initTable();
         vm.stack = alloc.create([stack_max]Value) catch std.os.exit(1);
         vm.resetStack();
         strings = Table.initTable();
         vm.defineNative("clock", clockNative);
-        return vm;
     }
 
     pub fn freeVM(self: *VM) void {
         strings.freeTable();
         self.globals.freeTable();
-        memory.freeObjects(self.alloc);
-        self.alloc.destroy(self.stack);
+        memory.freeObjects();
+        alloc.destroy(self.stack);
+        alloc.free(self.gray_stack);
+        self.gray_count = 0;
+        self.gray_stack = &.{};
+        self.open_upvalues = null;
+        self.frame_count = 0;
+        objects = null;
     }
 
     pub fn interpret(self: *VM, source: [:0]const u8) InterpretResult {
@@ -227,6 +236,18 @@ pub const VM = struct {
         }
     }
 
+    pub fn push(self: *VM, val: Value) void {
+        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(self.stack) < stack_max);
+        self.stack_top.* = val;
+        self.stack_top += 1;
+    }
+
+    pub fn pop(self: *VM) Value {
+        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(self.stack) > 0);
+        self.stack_top -= 1;
+        return self.stack_top[0];
+    }
+
     fn callValue(self: *VM, callee: Value, arg_count: usize) bool {
         if (callee.isObject()) {
             switch (callee.as.obj.t) {
@@ -323,18 +344,6 @@ pub const VM = struct {
         _ = self.pop();
     }
 
-    fn push(self: *VM, val: Value) void {
-        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(self.stack) < stack_max);
-        self.stack_top.* = val;
-        self.stack_top += 1;
-    }
-
-    fn pop(self: *VM) Value {
-        std.debug.assert(@ptrToInt(self.stack_top) - @ptrToInt(self.stack) > 0);
-        self.stack_top -= 1;
-        return self.stack_top[0];
-    }
-
     fn peek(self: *VM, distance: usize) Value {
         return (self.stack_top - 1 - distance)[0];
     }
@@ -347,7 +356,7 @@ pub const VM = struct {
         const b = self.pop().as.obj.asString();
         const a = self.pop().as.obj.asString();
         const length = a.length + b.length;
-        const chars = memory.allocate(u8, length + 1, self.alloc);
+        const chars = memory.allocate(u8, length + 1);
         std.mem.copy(u8, chars[0..a.length], a.chars[0..a.length]);
         std.mem.copy(u8, chars[a.length..length], b.chars[0..b.length]);
         chars[length] = 0;

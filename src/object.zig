@@ -6,12 +6,19 @@ const Value = @import("./value.zig").Value;
 const Chunk = @import("./chunk.zig").Chunk;
 const alloc = common.alloc;
 
+var vm: *VM = undefined;
+
+pub fn initGC(_vm: *VM) void {
+    vm = _vm;
+}
+
 pub const ObjType = enum(u8) { obj_string, obj_function, obj_native, obj_closure, obj_upvalue };
 
 pub const Obj = extern struct {
     const Self = @This();
     t: ObjType,
-    next: ?*Obj = undefined,
+    is_marked: bool,
+    next: ?*Obj = null,
 
     pub fn asString(self: *Self) *ObjString {
         return @ptrCast(*ObjString, @alignCast(@alignOf(ObjString), self));
@@ -102,7 +109,7 @@ pub const ObjUpvalue = extern struct {
 };
 
 pub fn newClosure(function: *ObjFunction) *ObjClosure {
-    const upvalues = memory.allocate(?*ObjUpvalue, function.upvalue_count, alloc);
+    const upvalues = memory.allocate(?*ObjUpvalue, function.upvalue_count);
     for (upvalues[0..function.upvalue_count]) |*upvalue| {
         upvalue.* = null;
     }
@@ -143,7 +150,7 @@ pub fn copyString(chars: [*]const u8, length: usize) *Obj {
     if (interned) |i| {
         string = i;
     } else {
-        var heap_chars = memory.allocate(u8, length + 1, alloc)[0 .. length + 1];
+        var heap_chars = memory.allocate(u8, length + 1)[0 .. length + 1];
         std.mem.copy(u8, heap_chars, chars[0..length]);
         heap_chars[length] = 0;
         string = allocateString(heap_chars[0..length], hash);
@@ -157,7 +164,7 @@ pub fn takeString(chars: [*]u8, length: usize) *Obj {
     const interned = VM.strings.findString(chars, length, hash);
     var string: *ObjString = undefined;
     if (interned) |i| {
-        memory.freeArray(u8, chars, length + 1, alloc);
+        memory.freeArray(u8, chars, length + 1);
         string = i;
     } else {
         string = allocateString(chars[0..length], hash);
@@ -178,7 +185,9 @@ fn allocateString(chars: []u8, hash: u32) *ObjString {
     string.length = chars.len;
     string.chars = chars.ptr;
     string.hash = hash;
+    vm.push(Value.Object(@ptrCast(*Obj, string)));
     _ = VM.strings.tableSet(string, Value.Nil());
+    _ = vm.pop();
     return string;
 }
 
@@ -193,9 +202,16 @@ fn hashString(key: [*]const u8, length: usize) u32 {
 }
 
 fn allocateObject(comptime t: type, obj_t: ObjType) *t {
-    var obj = &memory.allocate(t, 1, alloc)[0];
+    var obj = &memory.allocate(t, 1)[0];
     obj.obj.t = obj_t;
+    obj.obj.is_marked = false;
     obj.obj.next = VM.objects;
     VM.objects = &obj.obj;
+
+    if (comptime common.log_gc) {
+        const stdout = common.stdout;
+        stdout.print("{*} allocate {d} for {any}\n", .{ obj, @sizeOf(t), obj_t }) catch unreachable;
+    }
+
     return obj;
 }
