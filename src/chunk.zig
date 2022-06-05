@@ -64,7 +64,9 @@ pub const Chunk = struct {
     }
 
     pub fn addConstant(self: *Chunk, value: Value) u32 {
+        memory.vm.push(value);
         self.constants.writeValueArray(value);
+        _ = memory.vm.pop();
         return @intCast(u32, self.constants.count - 1);
     }
 

@@ -36,6 +36,8 @@ pub const VM = struct {
     const stack_max = frames_max * 256;
     pub var objects: ?*object.Obj = null; // linked list of allocated objects
     pub var strings: Table = undefined;
+    bytes_allocated: isize = undefined,
+    next_gc: isize = undefined,
     gray_count: usize = 0,
     gray_stack: []*Obj = &.{},
     frames: [frames_max]CallFrame = undefined,
@@ -49,6 +51,8 @@ pub const VM = struct {
 
     pub fn initVM(self: *VM) void {
         var vm = self;
+        vm.bytes_allocated = 0;
+        vm.next_gc = 1024 * 1024;
         memory.initGC(vm);
         vm.globals = Table.initTable();
         vm.stack = alloc.create([stack_max]Value) catch std.os.exit(1);
@@ -353,14 +357,17 @@ pub const VM = struct {
     }
 
     fn concatenate(self: *VM) void {
-        const b = self.pop().as.obj.asString();
-        const a = self.pop().as.obj.asString();
+        const b = self.peek(0).as.obj.asString();
+        const a = self.peek(1).as.obj.asString();
         const length = a.length + b.length;
         const chars = memory.allocate(u8, length + 1);
         std.mem.copy(u8, chars[0..a.length], a.chars[0..a.length]);
         std.mem.copy(u8, chars[a.length..length], b.chars[0..b.length]);
         chars[length] = 0;
-        self.push(Value.Object(object.takeString(chars, length)));
+        const result = object.takeString(chars, length);
+        _ = self.pop();
+        _ = self.pop();
+        self.push(Value.Object(result));
     }
 
     inline fn readByte(self: *VM) u8 {

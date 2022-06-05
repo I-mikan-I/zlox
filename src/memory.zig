@@ -16,7 +16,7 @@ const ObjUpvalue = object.ObjUpvalue;
 // TODO remove alloc parameters
 const alloc: std.mem.Allocator = common.alloc;
 
-var vm: *VM = undefined;
+pub var vm: *VM = undefined;
 
 pub fn initGC(_vm: *VM) void {
     vm = _vm;
@@ -48,10 +48,14 @@ pub fn reallocate(pointer: anytype, old_size: usize, new_size: usize) ?@TypeOf(p
     if (info != .Pointer) {
         unreachable;
     }
+    vm.bytes_allocated += @intCast(isize, new_size) - @intCast(isize, old_size);
     if (comptime common.stress_gc) {
         if (new_size > old_size) {
             collectGarbage();
         }
+    }
+    if (vm.bytes_allocated > vm.next_gc) {
+        collectGarbage();
     }
     if (new_size == 0) {
         alloc.free(pointer[0..old_size]);
@@ -109,15 +113,18 @@ fn collectGarbage() void {
         const stdout = common.stdout;
         stdout.print("-- gc begin\n", .{}) catch unreachable;
     }
+    const before = vm.bytes_allocated;
 
     markRoots();
     traceReferences();
     VM.strings.removeWhite();
     sweep();
+    vm.next_gc = vm.bytes_allocated * common.gc_heap_growth_factor;
 
     if (comptime common.log_gc) {
         const stdout = common.stdout;
         stdout.print("-- gc end\n", .{}) catch unreachable;
+        stdout.print("   collected {d} bytes (from {d} to {d}) next at {d}\n", .{ before - vm.bytes_allocated, before, vm.bytes_allocated, vm.next_gc }) catch unreachable;
     }
 }
 
