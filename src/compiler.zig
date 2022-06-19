@@ -249,7 +249,7 @@ fn declareVariable() void {
 
 fn addLocal(name: Token) void {
     defer current.?.local_count += 1;
-    if (current.?.local_count > 256) {
+    if (current.?.local_count >= 256) {
         errorAtPrevious("Too many local variables in function.");
         return;
     }
@@ -362,9 +362,21 @@ fn forStatement() void {
 }
 
 fn declaration() void {
-    if (match(.lox_fun)) funDeclaration() else if (match(.lox_var)) varDeclaration() else statement();
+    if (match(.lox_class)) classDeclaration() else if (match(.lox_fun)) funDeclaration() else if (match(.lox_var)) varDeclaration() else statement();
 
     if (p.panic_mode) synchronize();
+}
+
+fn classDeclaration() void {
+    consume(.identifier, "Expect class name.");
+    const name_constant = identifierConstant(&p.previous);
+    declareVariable();
+
+    emitBytes(&.{ @enumToInt(OpCode.op_class), name_constant });
+    defineVariable(name_constant);
+
+    consume(.left_brace, "Expect '{' before class body.");
+    consume(.right_brace, "Expect '}' after class body.");
 }
 
 fn statement() void {

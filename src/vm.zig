@@ -236,6 +236,9 @@ pub const VM = struct {
                 .op_multiply => self.binary_op(common.mul) orelse return .interpret_runtime_error,
                 .op_divide => self.binary_op(common.div) orelse return .interpret_runtime_error,
                 .op_not => self.push(Value.Boolean(isFalsey(self.pop()))),
+                .op_class => {
+                    self.push(Value.Object(object.newClass(self.readString())));
+                },
             }
         }
     }
@@ -263,6 +266,11 @@ pub const VM = struct {
                     const result = native(arg_count, self.stack_top - arg_count);
                     self.stack_top -= arg_count + 1;
                     self.push(result);
+                    return true;
+                },
+                .obj_class => {
+                    const class = callee.as.obj.asClass();
+                    (self.stack_top - arg_count - 1)[0] = Value.Object(object.newInstance(class));
                     return true;
                 },
                 else => {},

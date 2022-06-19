@@ -58,6 +58,14 @@ pub const Value = struct {
         if (!self.isObject()) return false;
         return self.as.obj.t == .obj_function;
     }
+    pub inline fn isClass(self: *const Value) bool {
+        if (!self.isObject()) return false;
+        return self.as.obj.t == .obj_class;
+    }
+    pub inline fn isInstance(self: *const Value) bool {
+        if (!self.isObject()) return false;
+        return self.as.obj.t == .obj_instance;
+    }
 };
 
 pub fn printValue(v: Value, writer: anytype) void {

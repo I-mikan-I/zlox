@@ -12,6 +12,8 @@ const ObjFunction = object.ObjFunction;
 const ObjNative = object.ObjNative;
 const ObjClosure = object.ObjClosure;
 const ObjUpvalue = object.ObjUpvalue;
+const ObjClass = object.ObjClass;
+const ObjInstance = object.ObjInstance;
 
 // TODO remove alloc parameters
 const alloc: std.mem.Allocator = common.alloc;
@@ -105,6 +107,14 @@ fn freeObject(o: *Obj) void {
         .obj_upvalue => {
             free(ObjUpvalue, o.asUpvalue());
         },
+        .obj_class => {
+            free(ObjClass, o.asClass());
+        },
+        .obj_instance => {
+            const instance = o.asInstance();
+            instance.fields().freeTable();
+            free(ObjInstance, instance);
+        },
     }
 }
 
@@ -195,6 +205,15 @@ pub fn blackenObject(obj: *Obj) void {
             for (closure.upvalues[0..closure.upvalue_count]) |uv| {
                 markObject(@ptrCast(?*Obj, uv));
             }
+        },
+        .obj_instance => {
+            var instance = obj.asInstance();
+            markObject(@ptrCast(*Obj, instance.class));
+            instance.fields().markTable();
+        },
+        .obj_class => {
+            const class = obj.asClass();
+            markObject(@ptrCast(*Obj, class.name));
         },
         .obj_native, .obj_string => {},
     }

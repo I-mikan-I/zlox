@@ -1,9 +1,11 @@
 const std = @import("std");
 const memory = @import("./memory.zig");
+const table = @import("./table.zig");
 const common = @import("./common.zig");
 const VM = @import("./vm.zig").VM;
 const Value = @import("./value.zig").Value;
 const Chunk = @import("./chunk.zig").Chunk;
+const Table = table.Table;
 const alloc = common.alloc;
 
 var vm: *VM = undefined;
@@ -12,7 +14,7 @@ pub fn initGC(_vm: *VM) void {
     vm = _vm;
 }
 
-pub const ObjType = enum(u8) { obj_string, obj_function, obj_native, obj_closure, obj_upvalue };
+pub const ObjType = enum(u8) { obj_string, obj_function, obj_native, obj_closure, obj_upvalue, obj_class, obj_instance };
 
 pub const Obj = extern struct {
     const Self = @This();
@@ -40,6 +42,14 @@ pub const Obj = extern struct {
         return @ptrCast(*ObjUpvalue, @alignCast(@alignOf(ObjUpvalue), self));
     }
 
+    pub fn asClass(self: *Self) *ObjClass {
+        return @ptrCast(*ObjClass, @alignCast(@alignOf(ObjClass), self));
+    }
+
+    pub fn asInstance(self: *Self) *ObjInstance {
+        return @ptrCast(*ObjInstance, @alignCast(@alignOf(ObjInstance), self));
+    }
+
     pub fn print(self: *Self, writer: anytype) void {
         switch (self.t) {
             .obj_string => {
@@ -56,6 +66,12 @@ pub const Obj = extern struct {
             },
             .obj_upvalue => {
                 writer.print("upvalue", .{}) catch unreachable;
+            },
+            .obj_class => {
+                writer.print("{s}", .{self.asClass().name.chars[0..self.asClass().name.length]}) catch unreachable;
+            },
+            .obj_instance => {
+                writer.print("{s} instance", .{self.asInstance().class.name.chars[0..self.asInstance().class.name.length]}) catch unreachable;
             },
         }
     }
@@ -77,6 +93,21 @@ pub const ObjClosure = extern struct {
     function: *ObjFunction,
     upvalues: [*]?*ObjUpvalue,
     upvalue_count: usize,
+};
+
+pub const ObjClass = extern struct {
+    obj: Obj,
+    name: *ObjString,
+};
+
+pub const ObjInstance = extern struct {
+    obj: Obj,
+    class: *ObjClass,
+    _fields: [@sizeOf(Table)]u8 align(@alignOf(Table)),
+
+    pub inline fn fields(self: *ObjInstance) *Table {
+        return @ptrCast(*Table, &self._fields);
+    }
 };
 
 pub const NativeFn = fn (arg_count: usize, args: [*]Value) Value;
@@ -107,6 +138,19 @@ pub const ObjUpvalue = extern struct {
         return @ptrCast(*Value, &self._closed);
     }
 };
+
+pub fn newInstance(class: *ObjClass) *Obj {
+    const instance = allocateObject(ObjInstance, .obj_instance);
+    instance.class = class;
+    instance.fields().* = Table.initTable();
+    return @ptrCast(*Obj, instance);
+}
+
+pub fn newClass(name: *ObjString) *Obj {
+    const class = allocateObject(ObjClass, .obj_class);
+    class.name = name;
+    return @ptrCast(*Obj, class);
+}
 
 pub fn newClosure(function: *ObjFunction) *ObjClosure {
     const upvalues = memory.allocate(?*ObjUpvalue, function.upvalue_count);
