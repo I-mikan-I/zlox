@@ -71,6 +71,8 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
             break :blk offset_t;
         },
         .op_class => constantInstruction("OP_CLASS", c, offset),
+        .op_get_property => constantInstruction("OP_GET_PROPERTY", c, offset),
+        .op_set_property => constantInstruction("OP_SET_PROPERTY", c, offset),
         // else => blk: {
         //     stdout.print("Unknown opcode {d}\n", .{instruction}) catch unreachable;
         //     break :blk offset + 1;

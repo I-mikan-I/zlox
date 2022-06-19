@@ -239,6 +239,33 @@ pub const VM = struct {
                 .op_class => {
                     self.push(Value.Object(object.newClass(self.readString())));
                 },
+                .op_get_property => {
+                    if (!self.peek(0).isInstance()) {
+                        self.runtimeError("Only instances have properties.", .{});
+                        return .interpret_runtime_error;
+                    }
+                    const instance = self.peek(0).as.obj.asInstance();
+                    const name = self.readString();
+
+                    if (instance.fields().tableGet(name)) |v| {
+                        _ = self.pop();
+                        self.push(v);
+                    } else {
+                        self.runtimeError("Undefined property '{s}'.", .{name.chars[0..name.length]});
+                        return .interpret_runtime_error;
+                    }
+                },
+                .op_set_property => {
+                    if (!self.peek(1).isInstance()) {
+                        self.runtimeError("Only instances have properties.", .{});
+                        return .interpret_runtime_error;
+                    }
+                    const instance = self.peek(1).as.obj.asInstance();
+                    _ = instance.fields().tableSet(self.readString(), self.peek(0));
+                    const v = self.pop();
+                    _ = self.pop();
+                    self.push(v);
+                },
             }
         }
     }

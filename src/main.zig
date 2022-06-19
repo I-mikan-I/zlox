@@ -194,3 +194,18 @@ test "closure_reference" {
     ), vm.InterpretResult.interpret_ok);
     try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }
+
+test "field_access" {
+    v.initVM();
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "3\n";
+    try std.testing.expectEqual(v.interpret(
+        \\class Pair {}
+        \\var pair = Pair();
+        \\pair.first = 1;
+        \\pair.second = 2;
+        \\print pair.first + pair.second;
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}

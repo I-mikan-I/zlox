@@ -103,6 +103,7 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     tmp[@enumToInt(TokenType.identifier)] = .{ .prefix = variable, .infix = null, .precedence = .prec_none };
     tmp[@enumToInt(TokenType.lox_and)] = .{ .prefix = null, .infix = and_, .precedence = .prec_and };
     tmp[@enumToInt(TokenType.lox_or)] = .{ .prefix = null, .infix = or_, .precedence = .prec_or };
+    tmp[@enumToInt(TokenType.dot)] = .{ .prefix = null, .infix = dot, .precedence = .prec_call };
     break :blk tmp;
 };
 
@@ -458,6 +459,18 @@ fn grouping(_: bool) void {
 fn call(_: bool) void {
     const arg_count = argumentList();
     emitBytes(&.{ @enumToInt(OpCode.op_call), arg_count });
+}
+
+fn dot(can_assign: bool) void {
+    consume(.identifier, "Expect property name after '.'.");
+    const name = identifierConstant(&p.previous);
+
+    if (can_assign and match(.equal)) {
+        expression();
+        emitBytes(&.{ @enumToInt(OpCode.op_set_property), name });
+    } else {
+        emitBytes(&.{ @enumToInt(OpCode.op_get_property), name });
+    }
 }
 
 fn argumentList() u8 {
