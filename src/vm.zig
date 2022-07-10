@@ -36,6 +36,7 @@ pub const VM = struct {
     const stack_max = frames_max * 256;
     pub var objects: ?*object.Obj = null; // linked list of allocated objects
     pub var strings: Table = undefined;
+    init_string: ?*object.ObjString = null,
     bytes_allocated: isize = undefined,
     next_gc: isize = undefined,
     gray_count: usize = 0,
@@ -59,6 +60,7 @@ pub const VM = struct {
         vm.resetStack();
         strings = Table.initTable();
         vm.defineNative("clock", clockNative);
+        vm.init_string = object.copyString("init", 4).asString();
     }
 
     pub fn freeVM(self: *VM) void {
@@ -72,6 +74,7 @@ pub const VM = struct {
         self.open_upvalues = null;
         self.frame_count = 0;
         objects = null;
+        self.init_string = null;
     }
 
     pub fn interpret(self: *VM, source: [:0]const u8) InterpretResult {
@@ -239,6 +242,9 @@ pub const VM = struct {
                 .op_class => {
                     self.push(Value.Object(object.newClass(self.readString())));
                 },
+                .op_method => {
+                    self.defineMethod(self.readString());
+                },
                 .op_get_property => {
                     if (!self.peek(0).isInstance()) {
                         self.runtimeError("Only instances have properties.", .{});
@@ -250,8 +256,7 @@ pub const VM = struct {
                     if (instance.fields().tableGet(name)) |v| {
                         _ = self.pop();
                         self.push(v);
-                    } else {
-                        self.runtimeError("Undefined property '{s}'.", .{name.chars[0..name.length]});
+                    } else if (!self.bindMethod(instance.class, name)) {
                         return .interpret_runtime_error;
                     }
                 },
@@ -298,13 +303,37 @@ pub const VM = struct {
                 .obj_class => {
                     const class = callee.as.obj.asClass();
                     (self.stack_top - arg_count - 1)[0] = Value.Object(object.newInstance(class));
+                    if (class.methods().tableGet(self.init_string.?)) |init| {
+                        return self.call(init.as.obj.asClosure(), arg_count);
+                    } else if (arg_count > 0) {
+                        self.runtimeError("Expected 0 arguments but got {d}.", .{arg_count});
+                        return false;
+                    }
                     return true;
+                },
+                .obj_bound_method => {
+                    const bound = callee.as.obj.asBoundMethod();
+                    (self.stack_top - arg_count - 1)[0] = bound.receiver().*;
+                    return self.call(bound.method, arg_count);
                 },
                 else => {},
             }
         }
         self.runtimeError("Can only call functions and classes.", .{});
         return false;
+    }
+
+    fn bindMethod(self: *VM, klass: *object.ObjClass, name: *object.ObjString) bool {
+        var method: ?Value = klass.methods().tableGet(name);
+        if (method) |m| {
+            const bound = object.newBoundMethod(self.peek(0), m.as.obj.asClosure());
+            _ = self.pop();
+            self.push(Value.Object(bound));
+            return true;
+        } else {
+            self.runtimeError("Undefined property '{s}'.", .{name.chars[0..name.length]});
+            return false;
+        }
     }
 
     fn captureUpvalue(self: *VM, local: *Value) *ObjUpvalue {
@@ -334,6 +363,13 @@ pub const VM = struct {
             upvalue.location = upvalue.closed();
             self.open_upvalues = self.open_upvalues.?.next;
         }
+    }
+
+    fn defineMethod(self: *VM, name: *object.ObjString) void {
+        const method = self.peek(0);
+        const klass = self.peek(1).as.obj.asClass();
+        _ = klass.methods().tableSet(name, method);
+        _ = self.pop();
     }
 
     fn call(self: *VM, callee: *ObjClosure, arg_count: usize) bool {

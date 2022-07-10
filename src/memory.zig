@@ -14,6 +14,7 @@ const ObjClosure = object.ObjClosure;
 const ObjUpvalue = object.ObjUpvalue;
 const ObjClass = object.ObjClass;
 const ObjInstance = object.ObjInstance;
+const ObjBoundMethod = object.ObjBoundMethod;
 
 // TODO remove alloc parameters
 const alloc: std.mem.Allocator = common.alloc;
@@ -108,12 +109,16 @@ fn freeObject(o: *Obj) void {
             free(ObjUpvalue, o.asUpvalue());
         },
         .obj_class => {
+            o.asClass().methods().freeTable();
             free(ObjClass, o.asClass());
         },
         .obj_instance => {
             const instance = o.asInstance();
             instance.fields().freeTable();
             free(ObjInstance, instance);
+        },
+        .obj_bound_method => {
+            free(ObjBoundMethod, o.asBoundMethod());
         },
     }
 }
@@ -139,6 +144,7 @@ fn collectGarbage() void {
 }
 
 fn markRoots() void {
+    markObject(@ptrCast(*Obj, vm.init_string));
     for (vm.stack) |*slot| {
         markValue(slot);
     }
@@ -214,6 +220,12 @@ pub fn blackenObject(obj: *Obj) void {
         .obj_class => {
             const class = obj.asClass();
             markObject(@ptrCast(*Obj, class.name));
+            class.methods().markTable();
+        },
+        .obj_bound_method => {
+            const bound = obj.asBoundMethod();
+            markValue(bound.receiver());
+            markObject(@ptrCast(*Obj, bound.method));
         },
         .obj_native, .obj_string => {},
     }

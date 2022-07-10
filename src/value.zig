@@ -66,6 +66,10 @@ pub const Value = struct {
         if (!self.isObject()) return false;
         return self.as.obj.t == .obj_instance;
     }
+    pub inline fn isBoundMethod(self: *const Value) bool {
+        if (!self.isObject()) return false;
+        return self.as.obj.t == .obj_bound_method;
+    }
 };
 
 pub fn printValue(v: Value, writer: anytype) void {

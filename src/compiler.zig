@@ -60,12 +60,22 @@ const Compiler = struct {
         if (fun_t != .type_script) {
             c.function.name = object.copyString(p.previous.start, p.previous.length).asString();
         }
-        self.locals[self.local_count].depth = 0;
-        self.locals[self.local_count].is_captured = false;
-        self.locals[self.local_count].name.start = "";
-        self.locals[self.local_count].name.length = 0;
+        var local = &self.locals[self.local_count];
+        local.depth = 0;
+        local.is_captured = false;
+        if (fun_t != .type_function) {
+            local.name.start = "this";
+            local.name.length = 4;
+        } else {
+            local.name.start = "";
+            local.name.length = 0;
+        }
         self.local_count += 1;
     }
+};
+
+const ClassCompiler = struct {
+    enclosing: ?*ClassCompiler,
 };
 
 const Local = struct {
@@ -79,7 +89,7 @@ const Upvalue = struct {
     is_local: bool,
 };
 
-const FunctionType = enum { type_function, type_script };
+const FunctionType = enum { type_function, type_script, type_method, type_initializer };
 
 const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     comptime var tmp: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = .{.{ .prefix = null, .infix = null, .precedence = .prec_none }} ** (@enumToInt(TokenType.lox_eof) + 1);
@@ -104,11 +114,13 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     tmp[@enumToInt(TokenType.lox_and)] = .{ .prefix = null, .infix = and_, .precedence = .prec_and };
     tmp[@enumToInt(TokenType.lox_or)] = .{ .prefix = null, .infix = or_, .precedence = .prec_or };
     tmp[@enumToInt(TokenType.dot)] = .{ .prefix = null, .infix = dot, .precedence = .prec_call };
+    tmp[@enumToInt(TokenType.lox_this)] = .{ .prefix = this_, .infix = null, .precedence = .prec_none };
     break :blk tmp;
 };
 
 var p: Parser = undefined;
 var current: ?*Compiler = null;
+var current_class: ?*ClassCompiler = null;
 var s: scanner.Scanner = undefined;
 
 fn getRule(t: TokenType) *const ParseRule {
@@ -187,6 +199,17 @@ fn function(t: FunctionType) void {
         emitByte(if (upvalue.is_local) 1 else 0);
         emitByte(upvalue.index);
     }
+}
+
+fn method() void {
+    consume(.identifier, "Expect method name.");
+    const constant = identifierConstant(&p.previous);
+    const t: FunctionType = if (p.previous.length == 4 and std.mem.eql(u8, @ptrCast(*const [4]u8, p.previous.start), "init"))
+        .type_initializer
+    else
+        .type_method;
+    function(t);
+    emitBytes(&.{ @enumToInt(OpCode.op_method), constant });
 }
 
 fn beginScope() void {
@@ -370,14 +393,25 @@ fn declaration() void {
 
 fn classDeclaration() void {
     consume(.identifier, "Expect class name.");
+    var class_name = p.previous;
     const name_constant = identifierConstant(&p.previous);
     declareVariable();
 
     emitBytes(&.{ @enumToInt(OpCode.op_class), name_constant });
     defineVariable(name_constant);
 
+    var class_compiler = ClassCompiler{ .enclosing = current_class };
+    current_class = &class_compiler;
+
+    namedVariable(&class_name, false);
     consume(.left_brace, "Expect '{' before class body.");
+    while (!check(.right_brace) and !check(.lox_eof)) {
+        method();
+    }
     consume(.right_brace, "Expect '}' after class body.");
+    emitByte(@enumToInt(OpCode.op_pop));
+
+    current_class = current_class.?.enclosing;
 }
 
 fn statement() void {
@@ -403,6 +437,9 @@ fn statement() void {
 fn returnStatement() void {
     if (current.?.fun_t == .type_script) errorAtPrevious("Can't return from top-level code.");
     if (match(.semicolon)) emitReturn() else {
+        if (current.?.fun_t == .type_initializer) {
+            errorAtCurrent("Can't return a value from an initializer.");
+        }
         expression();
         consume(.semicolon, "Expect ';' after return value.");
         emitByte(@enumToInt(OpCode.op_return));
@@ -423,6 +460,14 @@ fn string(_: bool) void {
 
 fn variable(can_assign: bool) void {
     namedVariable(&p.previous, can_assign);
+}
+
+fn this_(_: bool) void {
+    if (current_class) |_| {
+        variable(false);
+    } else {
+        errorAtPrevious("Can't use 'this' outside of a class.");
+    }
 }
 
 fn namedVariable(name: *Token, can_assign: bool) void {
@@ -689,7 +734,11 @@ fn patchJump(offset: u32) void {
 }
 
 fn emitReturn() void {
-    emitByte(@enumToInt(OpCode.op_nil));
+    if (current.?.fun_t == .type_initializer) {
+        emitBytes(&.{ @enumToInt(OpCode.op_get_local), 0 });
+    } else {
+        emitByte(@enumToInt(OpCode.op_nil));
+    }
     emitByte(@enumToInt(OpCode.op_return));
 }
 

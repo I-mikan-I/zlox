@@ -209,3 +209,24 @@ test "field_access" {
     ), vm.InterpretResult.interpret_ok);
     try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }
+
+test "methods" {
+    v.initVM();
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "Enjoy your cup of coffee and chicory\n";
+    try std.testing.expectEqual(v.interpret(
+        \\class CoffeeMaker {
+        \\    init(coffee) {
+        \\        this.coffee = coffee;
+        \\    }
+        \\    brew() {
+        \\        print "Enjoy your cup of " + this.coffee;
+        \\        this.coffee = nil;
+        \\    }
+        \\}
+        \\var maker = CoffeeMaker("coffee and chicory");
+        \\maker.brew();
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}

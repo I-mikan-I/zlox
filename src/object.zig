@@ -14,7 +14,7 @@ pub fn initGC(_vm: *VM) void {
     vm = _vm;
 }
 
-pub const ObjType = enum(u8) { obj_string, obj_function, obj_native, obj_closure, obj_upvalue, obj_class, obj_instance };
+pub const ObjType = enum(u8) { obj_bound_method, obj_string, obj_function, obj_native, obj_closure, obj_upvalue, obj_class, obj_instance };
 
 pub const Obj = extern struct {
     const Self = @This();
@@ -50,6 +50,10 @@ pub const Obj = extern struct {
         return @ptrCast(*ObjInstance, @alignCast(@alignOf(ObjInstance), self));
     }
 
+    pub fn asBoundMethod(self: *Self) *ObjBoundMethod {
+        return @ptrCast(*ObjBoundMethod, @alignCast(@alignOf(ObjBoundMethod), self));
+    }
+
     pub fn print(self: *Self, writer: anytype) void {
         switch (self.t) {
             .obj_string => {
@@ -72,6 +76,9 @@ pub const Obj = extern struct {
             },
             .obj_instance => {
                 writer.print("{s} instance", .{self.asInstance().class.name.chars[0..self.asInstance().class.name.length]}) catch unreachable;
+            },
+            .obj_bound_method => {
+                printFunction(self.asBoundMethod().method.function, writer);
             },
         }
     }
@@ -98,6 +105,11 @@ pub const ObjClosure = extern struct {
 pub const ObjClass = extern struct {
     obj: Obj,
     name: *ObjString,
+    _methods: [@sizeOf(Table)]u8 align(@alignOf(Table)),
+
+    pub inline fn methods(self: *ObjClass) *Table {
+        return @ptrCast(*Table, &self._methods);
+    }
 };
 
 pub const ObjInstance = extern struct {
@@ -107,6 +119,16 @@ pub const ObjInstance = extern struct {
 
     pub inline fn fields(self: *ObjInstance) *Table {
         return @ptrCast(*Table, &self._fields);
+    }
+};
+
+pub const ObjBoundMethod = extern struct {
+    obj: Obj,
+    _receiver: [@sizeOf(Value)]u8 align(@alignOf(Value)),
+    method: *ObjClosure,
+
+    pub inline fn receiver(self: *ObjBoundMethod) *Value {
+        return @ptrCast(*Value, &self._receiver);
     }
 };
 
@@ -146,9 +168,17 @@ pub fn newInstance(class: *ObjClass) *Obj {
     return @ptrCast(*Obj, instance);
 }
 
+pub fn newBoundMethod(receiver: Value, method: *ObjClosure) *Obj {
+    const bound = allocateObject(ObjBoundMethod, .obj_bound_method);
+    bound.receiver().* = receiver;
+    bound.method = method;
+    return @ptrCast(*Obj, bound);
+}
+
 pub fn newClass(name: *ObjString) *Obj {
     const class = allocateObject(ObjClass, .obj_class);
     class.name = name;
+    class.methods().* = Table.initTable();
     return @ptrCast(*Obj, class);
 }
 
