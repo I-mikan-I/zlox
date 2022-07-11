@@ -230,3 +230,24 @@ test "methods" {
     ), vm.InterpretResult.interpret_ok);
     try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }
+
+test "field call" {
+    v.initVM();
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "indirection\n";
+    try std.testing.expectEqual(v.interpret(
+        \\class CoffeeMaker {
+        \\    init() {
+        \\        fun f() {
+        \\          print this.word;
+        \\        }
+        \\        this.fn = f;
+        \\    }
+        \\}
+        \\var maker = CoffeeMaker();
+        \\maker.word = "indirection";
+        \\maker.fn();
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}

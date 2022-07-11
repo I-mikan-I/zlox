@@ -74,6 +74,7 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         .op_get_property => constantInstruction("OP_GET_PROPERTY", c, offset),
         .op_set_property => constantInstruction("OP_SET_PROPERTY", c, offset),
         .op_method => constantInstruction("OP_METHOD", c, offset),
+        .op_invoke => invokeInstruction("OP_INVOKE", c, offset),
     };
 }
 
@@ -101,5 +102,14 @@ fn jumpInstruction(name: []const u8, sign: isize, c: *chunk.Chunk, offset: u32) 
     jump <<= 8;
     jump |= c.code[offset + 2];
     stdout.print("{s:<16} {d:4} -> {d}\n", .{ name, offset, offset + 3 + sign * jump }) catch unreachable;
+    return offset + 3;
+}
+
+fn invokeInstruction(name: []const u8, c: *chunk.Chunk, offset: u32) u32 {
+    const constant = c.code[offset + 1];
+    const arg_count = c.code[offset + 2];
+    stdout.print("{s:<16} ({d} args) {d:4} ", .{ name, arg_count, constant }) catch unreachable;
+    value.printValue(c.constants.values[constant], stdout);
+    stdout.print("\n", .{}) catch unreachable;
     return offset + 3;
 }

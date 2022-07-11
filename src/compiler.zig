@@ -513,6 +513,10 @@ fn dot(can_assign: bool) void {
     if (can_assign and match(.equal)) {
         expression();
         emitBytes(&.{ @enumToInt(OpCode.op_set_property), name });
+    } else if (match(.left_paren)) {
+        const arg_count = argumentList();
+        emitBytes(&.{ @enumToInt(OpCode.op_invoke), name });
+        emitByte(arg_count);
     } else {
         emitBytes(&.{ @enumToInt(OpCode.op_get_property), name });
     }
