@@ -34,10 +34,13 @@ pub const OpCode = enum(u8) {
     op_loop,
     op_call,
     op_invoke,
+    op_super_invoke,
     op_closure,
     op_close_upvalue,
     op_return,
     op_class,
+    op_inherit,
+    op_get_super,
     op_method,
 };
 

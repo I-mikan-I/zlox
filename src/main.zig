@@ -251,3 +251,32 @@ test "field call" {
     ), vm.InterpretResult.interpret_ok);
     try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
 }
+
+test "super" {
+    v.initVM();
+    defer v.freeVM();
+    common.buffer_stream.reset();
+    const expected = "Cutting food...\nCooking at 90 degrees!\n";
+    try std.testing.expectEqual(v.interpret(
+        \\class Base {
+        \\    cook() {
+        \\        print "Cooking at " + this.getTemp();
+        \\    }
+        \\    getTemp() {
+        \\        return "100 degrees!";
+        \\    }
+        \\}
+        \\class Derived < Base {
+        \\    getTemp() {
+        \\        return "90 degrees!";
+        \\    }
+        \\    cook() {
+        \\        print "Cutting food...";
+        \\        super.cook();
+        \\    }
+        \\}
+        \\var d = Derived();
+        \\d.cook();
+    ), vm.InterpretResult.interpret_ok);
+    try std.testing.expectEqualStrings(expected, common.buffer_stream.getWritten());
+}

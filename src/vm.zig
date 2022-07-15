@@ -153,6 +153,23 @@ pub const VM = struct {
                     }
                     self.frame = &self.frames[self.frame_count - 1];
                 },
+                .op_super_invoke => {
+                    const method = self.readString();
+                    const arg_count = self.readByte();
+                    const super = self.pop().as.obj.asClass();
+                    if (!self.invokeFromClass(super, method, arg_count)) {
+                        return .interpret_runtime_error;
+                    }
+                    self.frame = &self.frames[self.frame_count - 1];
+                },
+                .op_get_super => {
+                    const name = self.readString();
+                    const super = self.pop().as.obj.asClass();
+
+                    if (!self.bindMethod(super, name)) {
+                        return .interpret_runtime_error;
+                    }
+                },
                 .op_jump => {
                     const offset = self.readShort();
                     self.frame.ip += offset;
@@ -249,6 +266,16 @@ pub const VM = struct {
                 .op_not => self.push(Value.Boolean(isFalsey(self.pop()))),
                 .op_class => {
                     self.push(Value.Object(object.newClass(self.readString())));
+                },
+                .op_inherit => {
+                    const super = self.peek(1);
+                    if (!super.isClass()) {
+                        self.runtimeError("Superclass must be a class.", .{});
+                        return .interpret_runtime_error;
+                    }
+                    const sub = self.peek(0).as.obj.asClass();
+                    sub.methods().tableAddAll(super.as.obj.asClass().methods());
+                    _ = self.pop();
                 },
                 .op_method => {
                     self.defineMethod(self.readString());

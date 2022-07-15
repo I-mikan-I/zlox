@@ -76,6 +76,7 @@ const Compiler = struct {
 
 const ClassCompiler = struct {
     enclosing: ?*ClassCompiler,
+    has_superclass: bool,
 };
 
 const Local = struct {
@@ -115,6 +116,7 @@ const rules: [@enumToInt(TokenType.lox_eof) + 1]ParseRule = blk: {
     tmp[@enumToInt(TokenType.lox_or)] = .{ .prefix = null, .infix = or_, .precedence = .prec_or };
     tmp[@enumToInt(TokenType.dot)] = .{ .prefix = null, .infix = dot, .precedence = .prec_call };
     tmp[@enumToInt(TokenType.lox_this)] = .{ .prefix = this_, .infix = null, .precedence = .prec_none };
+    tmp[@enumToInt(TokenType.lox_super)] = .{ .prefix = super_, .infix = null, .precedence = .prec_none };
     break :blk tmp;
 };
 
@@ -283,6 +285,15 @@ fn addLocal(name: Token) void {
     local.is_captured = false;
 }
 
+fn syntheticToken(text: []const u8) Token {
+    return .{
+        .t = TokenType.lox_nil,
+        .start = text.ptr,
+        .length = text.len,
+        .line = 0,
+    };
+}
+
 fn expressionStatement() void {
     expression();
     consume(.semicolon, "Expect ';' after expression.");
@@ -400,8 +411,22 @@ fn classDeclaration() void {
     emitBytes(&.{ @enumToInt(OpCode.op_class), name_constant });
     defineVariable(name_constant);
 
-    var class_compiler = ClassCompiler{ .enclosing = current_class };
+    var class_compiler = ClassCompiler{ .enclosing = current_class, .has_superclass = false };
     current_class = &class_compiler;
+
+    if (match(.less)) {
+        consume(.identifier, "Expect superclass name.");
+        variable(false);
+        if (identifiersEqual(&class_name, &p.previous)) {
+            errorAtPrevious("A class can't inherit from itself.");
+        }
+        beginScope();
+        addLocal(syntheticToken("super"));
+        defineVariable(0);
+        namedVariable(&class_name, false);
+        emitByte(@enumToInt(OpCode.op_inherit));
+        class_compiler.has_superclass = true;
+    }
 
     namedVariable(&class_name, false);
     consume(.left_brace, "Expect '{' before class body.");
@@ -410,6 +435,10 @@ fn classDeclaration() void {
     }
     consume(.right_brace, "Expect '}' after class body.");
     emitByte(@enumToInt(OpCode.op_pop));
+
+    if (class_compiler.has_superclass) {
+        endScope();
+    }
 
     current_class = current_class.?.enclosing;
 }
@@ -467,6 +496,30 @@ fn this_(_: bool) void {
         variable(false);
     } else {
         errorAtPrevious("Can't use 'this' outside of a class.");
+    }
+}
+
+fn super_(_: bool) void {
+    if (current_class) |cc| {
+        if (!cc.has_superclass) {
+            errorAtPrevious("Can't use 'super' in a class with no superclass.");
+        }
+        consume(.dot, "Expect '.' after 'super'.");
+        consume(.identifier, "Expect superclass method name.");
+        const name = identifierConstant(&p.previous);
+
+        namedVariable(&syntheticToken("this"), false);
+        if (match(.left_paren)) {
+            const arg_count = argumentList();
+            namedVariable(&syntheticToken("super"), false);
+            emitBytes(&.{ @enumToInt(OpCode.op_super_invoke), name });
+            emitByte(arg_count);
+        } else {
+            namedVariable(&syntheticToken("super"), true);
+            emitBytes(&.{ @enumToInt(OpCode.op_get_super), name });
+        }
+    } else {
+        errorAtPrevious("Can't use 'super' outside of a class.");
     }
 }
 

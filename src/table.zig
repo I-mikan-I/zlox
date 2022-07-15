@@ -92,10 +92,10 @@ pub const Table = struct {
         }
     }
 
-    fn tableAddAll(to: *Self, from: *Self) void {
+    pub fn tableAddAll(to: *Self, from: *Self) void {
         for (from.entries[0..from.capacity]) |entry| {
-            if (entry.key != null) {
-                to.tableSet(entry.key, entry.value);
+            if (entry.key) |key| {
+                _ = to.tableSet(key, entry.value);
             }
         }
     }

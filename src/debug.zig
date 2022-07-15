@@ -75,6 +75,9 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
         .op_set_property => constantInstruction("OP_SET_PROPERTY", c, offset),
         .op_method => constantInstruction("OP_METHOD", c, offset),
         .op_invoke => invokeInstruction("OP_INVOKE", c, offset),
+        .op_inherit => simpleInstruction("OP_INHERIT", offset),
+        .op_get_super => constantInstruction("OP_GET_SUPER", c, offset),
+        .op_super_invoke => invokeInstruction("OP_SUPER_INVOKE", c, offset),
     };
 }
 
