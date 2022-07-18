@@ -16,6 +16,7 @@ pub fn build(b: *std.build.Builder) void {
     options.addOption(bool, "dump_code", b.option(bool, "enable-dump", "enables bytecode printing after compilation.") orelse false);
     options.addOption(bool, "stress_gc", b.option(bool, "enable-gc-stress", "enables stressing the garbage collector.") orelse false);
     options.addOption(bool, "log_gc", b.option(bool, "enable-log-gc", "enables logging gc operation.") orelse false);
+    options.addOption(bool, "nan_boxing", b.option(bool, "enable-nan-boxing", "enables NaN boxing") orelse false);
     const exe = b.addExecutable("zlox", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);

@@ -6,6 +6,7 @@ pub const trace_enabled = @import("build_options").trace_enable;
 pub const dump_enabled = @import("build_options").dump_code;
 pub const stress_gc = @import("build_options").stress_gc;
 pub const log_gc = @import("build_options").log_gc;
+pub const nan_boxing = @import("build_options").nan_boxing;
 pub const gc_heap_growth_factor = 2;
 pub const stdout = if (builtin.is_test) buffer_stream.writer() else std.io.getStdOut().writer();
 pub const stderr = std.io.getStdErr().writer();

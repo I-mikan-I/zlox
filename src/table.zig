@@ -63,7 +63,7 @@ pub const Table = struct {
     pub fn findString(self: *Self, chars: [*]const u8, length: usize, hash: u32) ?*ObjString {
         if (self.count == 0) return null;
 
-        var index = hash % self.capacity;
+        var index = hash & (self.capacity - 1);
         while (true) {
             const entry = &self.entries[index];
             if (entry.key == null) {
@@ -71,7 +71,7 @@ pub const Table = struct {
             } else if (entry.key.?.hash == hash and std.mem.eql(u8, entry.key.?.chars[0..length], chars[0..length])) {
                 return entry.key;
             }
-            index = (index + 1) % self.capacity;
+            index = (index + 1) & (self.capacity - 1);
         }
     }
 
@@ -128,7 +128,7 @@ const Entry = struct {
 };
 
 fn findEntry(entries: [*]Entry, capacity: usize, key: *ObjString) *Entry {
-    var index = key.hash % capacity;
+    var index = key.hash & (capacity - 1);
     var tombstone: ?*Entry = null;
     while (true) {
         const entry = &entries[index];
@@ -139,6 +139,6 @@ fn findEntry(entries: [*]Entry, capacity: usize, key: *ObjString) *Entry {
                 if (tombstone == null) tombstone = entry;
             }
         } else if (entry.key == key) return entry;
-        index = (index + 1) % capacity;
+        index = (index + 1) & (capacity - 1);
     }
 }

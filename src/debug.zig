@@ -58,7 +58,7 @@ pub fn disassembleInstruction(c: *chunk.Chunk, offset: u32) u32 {
             stdout.print("{s:<16} {d:4} ", .{ "OP_CLOSURE", con }) catch unreachable;
             value.printValue(c.constants.values[con], stdout);
             stdout.print("\n", .{}) catch unreachable;
-            const function = c.constants.values[con].as.obj.asFunction();
+            const function = c.constants.values[con].asObject().asFunction();
             var i: usize = 0;
             while (i < function.upvalue_count) : (i += 1) {
                 const is_local = c.code[offset_t];

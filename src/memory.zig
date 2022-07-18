@@ -233,7 +233,7 @@ pub fn blackenObject(obj: *Obj) void {
 
 pub fn markValue(slot: *Value) void {
     if (slot.isObject()) {
-        markObject(slot.as.obj);
+        markObject(slot.asObject());
     }
 }
 

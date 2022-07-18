@@ -120,7 +120,7 @@ pub const VM = struct {
                     self.frame = &self.frames[self.frame_count - 1];
                 },
                 .op_closure => {
-                    const function = self.readConstant().as.obj.asFunction();
+                    const function = self.readConstant().asObject().asFunction();
                     const closure = object.newClosure(function);
                     self.push(Value.Object(@ptrCast(*Obj, closure)));
                     var i: usize = 0;
@@ -156,7 +156,7 @@ pub const VM = struct {
                 .op_super_invoke => {
                     const method = self.readString();
                     const arg_count = self.readByte();
-                    const super = self.pop().as.obj.asClass();
+                    const super = self.pop().asObject().asClass();
                     if (!self.invokeFromClass(super, method, arg_count)) {
                         return .interpret_runtime_error;
                     }
@@ -164,7 +164,7 @@ pub const VM = struct {
                 },
                 .op_get_super => {
                     const name = self.readString();
-                    const super = self.pop().as.obj.asClass();
+                    const super = self.pop().asObject().asClass();
 
                     if (!self.bindMethod(super, name)) {
                         return .interpret_runtime_error;
@@ -199,7 +199,7 @@ pub const VM = struct {
                         self.runtimeError("Operand must be a number", .{});
                         return .interpret_runtime_error;
                     }
-                    self.push(Value.Number(-(self.pop().as.number)));
+                    self.push(Value.Number(-(self.pop().asNumber())));
                 },
                 .op_print => {
                     value.printValue(self.pop(), stdout);
@@ -254,7 +254,7 @@ pub const VM = struct {
                     if (a.isString() and b.isString()) self.concatenate() else if (a.isNumber() and b.isNumber()) {
                         _ = self.pop();
                         _ = self.pop();
-                        self.push(Value.Number(a.as.number + b.as.number));
+                        self.push(Value.Number(a.asNumber() + b.asNumber()));
                     } else {
                         self.runtimeError("Operand must be two numbers or two strings.", .{});
                         return .interpret_runtime_error;
@@ -273,8 +273,8 @@ pub const VM = struct {
                         self.runtimeError("Superclass must be a class.", .{});
                         return .interpret_runtime_error;
                     }
-                    const sub = self.peek(0).as.obj.asClass();
-                    sub.methods().tableAddAll(super.as.obj.asClass().methods());
+                    const sub = self.peek(0).asObject().asClass();
+                    sub.methods().tableAddAll(super.asObject().asClass().methods());
                     _ = self.pop();
                 },
                 .op_method => {
@@ -285,7 +285,7 @@ pub const VM = struct {
                         self.runtimeError("Only instances have properties.", .{});
                         return .interpret_runtime_error;
                     }
-                    const instance = self.peek(0).as.obj.asInstance();
+                    const instance = self.peek(0).asObject().asInstance();
                     const name = self.readString();
 
                     if (instance.fields().tableGet(name)) |v| {
@@ -300,7 +300,7 @@ pub const VM = struct {
                         self.runtimeError("Only instances have properties.", .{});
                         return .interpret_runtime_error;
                     }
-                    const instance = self.peek(1).as.obj.asInstance();
+                    const instance = self.peek(1).asObject().asInstance();
                     _ = instance.fields().tableSet(self.readString(), self.peek(0));
                     const v = self.pop();
                     _ = self.pop();
@@ -324,22 +324,22 @@ pub const VM = struct {
 
     fn callValue(self: *VM, callee: Value, arg_count: usize) bool {
         if (callee.isObject()) {
-            switch (callee.as.obj.t) {
+            switch (callee.asObject().t) {
                 .obj_closure => {
-                    return self.call(callee.as.obj.asClosure(), arg_count);
+                    return self.call(callee.asObject().asClosure(), arg_count);
                 },
                 .obj_native => {
-                    const native = callee.as.obj.asNative().function().*;
+                    const native = callee.asObject().asNative().function().*;
                     const result = native(arg_count, self.stack_top - arg_count);
                     self.stack_top -= arg_count + 1;
                     self.push(result);
                     return true;
                 },
                 .obj_class => {
-                    const class = callee.as.obj.asClass();
+                    const class = callee.asObject().asClass();
                     (self.stack_top - arg_count - 1)[0] = Value.Object(object.newInstance(class));
                     if (class.methods().tableGet(self.init_string.?)) |init| {
-                        return self.call(init.as.obj.asClosure(), arg_count);
+                        return self.call(init.asObject().asClosure(), arg_count);
                     } else if (arg_count > 0) {
                         self.runtimeError("Expected 0 arguments but got {d}.", .{arg_count});
                         return false;
@@ -347,7 +347,7 @@ pub const VM = struct {
                     return true;
                 },
                 .obj_bound_method => {
-                    const bound = callee.as.obj.asBoundMethod();
+                    const bound = callee.asObject().asBoundMethod();
                     (self.stack_top - arg_count - 1)[0] = bound.receiver().*;
                     return self.call(bound.method, arg_count);
                 },
@@ -364,7 +364,7 @@ pub const VM = struct {
             self.runtimeError("Only instances have methods.", .{});
             return false;
         }
-        const instance = receiver.as.obj.asInstance();
+        const instance = receiver.asObject().asInstance();
         if (instance.fields().tableGet(name)) |field| {
             (self.stack_top - arg_count - 1)[0] = field;
             return self.callValue(field, arg_count);
@@ -374,7 +374,7 @@ pub const VM = struct {
 
     fn invokeFromClass(self: *VM, klass: *object.ObjClass, name: *object.ObjString, arg_count: u8) bool {
         if (klass.methods().tableGet(name)) |method| {
-            return self.call(method.as.obj.asClosure(), arg_count);
+            return self.call(method.asObject().asClosure(), arg_count);
         } else {
             self.runtimeError("Undefined property '{s}'.", .{name.chars[0..name.length]});
             return false;
@@ -384,7 +384,7 @@ pub const VM = struct {
     fn bindMethod(self: *VM, klass: *object.ObjClass, name: *object.ObjString) bool {
         var method: ?Value = klass.methods().tableGet(name);
         if (method) |m| {
-            const bound = object.newBoundMethod(self.peek(0), m.as.obj.asClosure());
+            const bound = object.newBoundMethod(self.peek(0), m.asObject().asClosure());
             _ = self.pop();
             self.push(Value.Object(bound));
             return true;
@@ -425,7 +425,7 @@ pub const VM = struct {
 
     fn defineMethod(self: *VM, name: *object.ObjString) void {
         const method = self.peek(0);
-        const klass = self.peek(1).as.obj.asClass();
+        const klass = self.peek(1).asObject().asClass();
         _ = klass.methods().tableSet(name, method);
         _ = self.pop();
     }
@@ -472,7 +472,7 @@ pub const VM = struct {
     fn defineNative(self: *VM, name: []const u8, function: object.NativeFn) void {
         self.push(Value.Object(object.copyString(name.ptr, name.len)));
         self.push(Value.Object(object.newNative(function)));
-        _ = self.globals.tableSet(self.stack[0].as.obj.asString(), self.stack[1]);
+        _ = self.globals.tableSet(self.stack[0].asObject().asString(), self.stack[1]);
         _ = self.pop();
         _ = self.pop();
     }
@@ -482,12 +482,12 @@ pub const VM = struct {
     }
 
     fn isFalsey(val: Value) bool {
-        return val.isNil() or (val.isBool() and !val.as.boolean);
+        return val.isNil() or (val.isBool() and !val.asBoolean());
     }
 
     fn concatenate(self: *VM) void {
-        const b = self.peek(0).as.obj.asString();
-        const a = self.peek(1).as.obj.asString();
+        const b = self.peek(0).asObject().asString();
+        const a = self.peek(1).asObject().asString();
         const length = a.length + b.length;
         const chars = memory.allocate(u8, length + 1);
         std.mem.copy(u8, chars[0..a.length], a.chars[0..a.length]);
@@ -509,7 +509,7 @@ pub const VM = struct {
     }
 
     inline fn readString(self: *VM) *object.ObjString {
-        return self.readConstant().as.obj.asString();
+        return self.readConstant().asObject().asString();
     }
 
     inline fn binary_op(self: *VM, comptime op: fn (f64, f64) Value) ?void {
@@ -517,8 +517,8 @@ pub const VM = struct {
             self.runtimeError("Operands must be numbers.", .{});
             return null;
         }
-        const b = self.pop().as.number;
-        const a = self.pop().as.number;
+        const b = self.pop().asNumber();
+        const a = self.pop().asNumber();
         self.push(op(a, b));
         return;
     }
